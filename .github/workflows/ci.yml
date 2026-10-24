@@ -1,0 +1,22 @@
+name: Build and test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Test audio and routing logic
+        run: ./scripts/test.sh
+      - name: Build universal app
+        run: ./scripts/build.sh
+      - name: Package download
+        run: ./scripts/package.sh
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: MashKeys-universal
+          path: dist/*

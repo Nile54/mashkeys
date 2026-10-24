@@ -1,0 +1,10 @@
+.build/
+dist/
+.DS_Store
+*.dSYM/
+*.pem
+*.p12
+*.mobileprovision
+*.wav
+*.aiff
+*.mp3
