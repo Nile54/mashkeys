@@ -7,6 +7,9 @@ final class SettingsWindow: NSWindowController {
     private var apps = NSStackView()
     private var hostField = NSTextField()
     private var speechButton = NSButton()
+    private var websiteMode = NSButton()
+    private var websiteExplanation = NSTextField()
+    private var addButton = NSButton()
     private let presetSites = ["instagram.com", "tiktok.com", "facebook.com", "x.com", "youtube.com"]
 
     init() {
@@ -20,6 +23,7 @@ final class SettingsWindow: NSWindowController {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func show() {
+        websiteMode.state = defaults.bool(forKey: "websiteFilteringEnabled") ? .on : .off
         refreshSites(); refreshApps()
         speechButton.state = defaults.object(forKey: "speechProtection") as? Bool == false ? .off : .on
         window?.makeKeyAndOrderFront(nil)
@@ -45,19 +49,19 @@ final class SettingsWindow: NSWindowController {
         privacy.textColor = .secondaryLabelColor
         privacy.frame = NSRect(x: 22, y: 449, width: 435, height: 42); view.addSubview(privacy)
 
-        let siteTitle = label("Ignore websites", bold: true)
-        siteTitle.frame = NSRect(x: 22, y: 415, width: 180, height: 22); view.addSubview(siteTitle)
+        websiteMode = NSButton(checkboxWithTitle: "Website filtering (optional)", target: self, action: #selector(websiteModeChanged))
+        websiteMode.frame = NSRect(x: 22, y: 413, width: 220, height: 24); view.addSubview(websiteMode)
         let setup = NSButton(title: "Set up browser helper…", target: self, action: #selector(setupBrowser))
         setup.bezelStyle = .rounded; setup.frame = NSRect(x: 252, y: 409, width: 208, height: 30); view.addSubview(setup)
-        let explanation = label("Site rules isolate Chrome/Edge/Brave audio. Click the helper on each music tab to connect it. Unconnected or blocked tabs never drive the lights; other apps continue normally.")
-        explanation.textColor = .secondaryLabelColor
-        explanation.frame = NSRect(x: 22, y: 350, width: 435, height: 56); view.addSubview(explanation)
+        websiteExplanation = label("")
+        websiteExplanation.textColor = .secondaryLabelColor
+        websiteExplanation.frame = NSRect(x: 22, y: 350, width: 435, height: 56); view.addSubview(websiteExplanation)
         addScroll(stack: sites, frame: NSRect(x: 22, y: 222, width: 435, height: 120), to: view)
         hostField = NSTextField(frame: NSRect(x: 22, y: 182, width: 330, height: 26))
         hostField.placeholderString = "Add a domain, e.g. instagram.com"
         hostField.target = self; hostField.action = #selector(addSite); view.addSubview(hostField)
-        let add = NSButton(title: "Add", target: self, action: #selector(addSite))
-        add.bezelStyle = .rounded; add.frame = NSRect(x: 364, y: 180, width: 94, height: 30); view.addSubview(add)
+        addButton = NSButton(title: "Add", target: self, action: #selector(addSite))
+        addButton.bezelStyle = .rounded; addButton.frame = NSRect(x: 364, y: 180, width: 94, height: 30); view.addSubview(addButton)
         let appTitle = label("Ignore whole apps", bold: true)
         appTitle.frame = NSRect(x: 22, y: 145, width: 435, height: 24); view.addSubview(appTitle)
         addScroll(stack: apps, frame: NSRect(x: 22, y: 34, width: 435, height: 105), to: view)
@@ -81,11 +85,18 @@ final class SettingsWindow: NSWindowController {
 
     private func refreshSites() {
         clear(sites)
+        let active = defaults.bool(forKey: "websiteFilteringEnabled")
+        hostField.isEnabled = active
+        addButton.isEnabled = active
+        websiteExplanation.stringValue = active
+            ? "On: connect music tabs with the browser helper. Checked sites and unconnected tabs do not drive the lights; other apps stay automatic."
+            : "Off: listen everywhere without an extension. Saved website rules below are inactive. Speech filtering and app exclusions still work."
         let blocked = Set(defaults.stringArray(forKey: "blockedWebsites") ?? [])
         for host in Set(presetSites).union(blocked).sorted() {
             let button = NSButton(checkboxWithTitle: host, target: self, action: #selector(siteChanged(_:)))
             button.identifier = NSUserInterfaceItemIdentifier(host)
             button.state = blocked.contains(host) ? .on : .off
+            button.isEnabled = active
             sites.addArrangedSubview(button)
         }
     }
@@ -107,6 +118,10 @@ final class SettingsWindow: NSWindowController {
     }
 
     @objc private func speechChanged() { defaults.set(speechButton.state == .on, forKey: "speechProtection"); onChange?() }
+    @objc private func websiteModeChanged() {
+        defaults.set(websiteMode.state == .on, forKey: "websiteFilteringEnabled")
+        refreshSites(); onChange?()
+    }
     @objc private func setupBrowser() { BrowserInstaller.showInstructions() }
     @objc private func addSite() {
         guard let host = RuleSnapshot.host(from: hostField.stringValue) else { NSSound.beep(); return }

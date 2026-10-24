@@ -6,6 +6,8 @@ Music for your MacBook keyboard. Smooth, full-range bass pulses that follow the 
 
 **[Download MashKeys](https://github.com/Nile54/mashkeys/releases/latest)** · [Browser helper setup](docs/browser-helper.md) · [Privacy](docs/privacy.md)
 
+**Normal music listening needs no browser extension.** MashKeys captures system audio from all apps and websites automatically. The browser helper is an optional extra only for individual-site exclusions.
+
 MashKeys is a standalone Swift app. It does not require or install another keyboard visualizer, virtual audio driver, Python service, or cloud account.
 
 ## Install
@@ -37,11 +39,11 @@ Open **MashKeys → Settings**.
 
 **Whole apps:** check an app under “Ignore whole apps.” Its audio is removed from MashKeys’ native capture. It is not muted. Helper processes are covered. Changing app rules or starting a newly allowed app may briefly rebuild the filtered capture.
 
-**Websites:** add or check a domain, such as `instagram.com`. Website rules use **strict browser-tab isolation**, not “pause everything while Instagram is open.” Connected YouTube music and native apps can keep driving the keyboard while Instagram is ignored.
+**Websites (optional):** explicitly enable **Website filtering (optional)**, then select a domain such as `instagram.com`. Merely having saved rules does not change normal system capture. This mode uses **strict browser-tab isolation**, not “pause everything while Instagram is open.” Connected YouTube music and native apps can keep driving the keyboard while Instagram is ignored.
 
-This requires the included Chrome/Edge/Brave helper. Chrome requires a user gesture to capture a tab, so click the helper once on each music tab you want connected. While website rules are active, **unconnected browser tabs also do not drive the lights**. Your audio remains audible. Native apps continue automatically. Safari/Firefox website-level isolation is not supported; whole-app exclusion is available instead.
+This requires the included Chrome/Edge/Brave helper. Chrome requires a user gesture to capture a tab, so click the helper once on each music tab you want connected. While optional website filtering is active, **unconnected browser tabs also do not drive the lights**. Your audio remains audible. Native apps continue automatically. Safari/Firefox website-level isolation is not supported; whole-app exclusion is available instead.
 
-See [the browser helper guide](docs/browser-helper.md). No extension or extra setup is needed if you use only normal system capture and whole-app exclusions.
+Leave **Website filtering (optional)** off to listen everywhere with no helper, tab connections or extra setup. Speech suppression and whole-app exclusions still work. Saved website rules remain available but inactive. See [the browser helper guide](docs/browser-helper.md) only if you want that optional mode.
 
 ## Compatibility
 

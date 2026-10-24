@@ -12,6 +12,8 @@ MashKeys processes audio locally. It does not save, upload or transcribe audio, 
 
 ## Optional browser helper
 
+This helper is not required in the default system-wide mode. It is used only when Website filtering is explicitly switched on.
+
 Permissions are `activeTab`, `tabCapture`, `tabs`, `offscreen` and `nativeMessaging`. There are no all-site content scripts and no remote server. Tab permission allows the helper to keep track of the selected tab’s hostname after navigation.
 
 Only explicitly connected tab audio is streamed. Its **hostname**, sample rate, tab stream identifier and short PCM packets travel over local IPC. Full URLs, titles, page contents, messages, passwords and browsing history are not sent to MashKeys or to an external service. No audio file is created.

@@ -4,7 +4,7 @@ import Darwin
 signal(SIGPIPE, SIG_IGN)
 BridgeWire.testSocket = "/tmp/mashkeys-test-\(UUID().uuidString.prefix(8)).sock"
 let routing = RoutingRules()
-routing.replace(RuleSnapshot(running: true, speech: false, websites: ["instagram.com"], applications: []))
+routing.replace(RuleSnapshot(running: true, speech: false, websiteFiltering: true, websites: ["instagram.com"], applications: []))
 let server = BrowserBridge(rules: routing)
 var youtubeHits = 0
 var blockedHits = 0
@@ -39,17 +39,25 @@ DispatchQueue.global(qos: .userInitiated).async {
                 precondition(reply["blocked"] as? Bool == (stream == "instagram"))
             }
         }
+        DispatchQueue.main.sync {
+            precondition(youtubeHits == 1 && blockedHits == 0)
+        }
         // Change only the site rule while leaving the other stream eligible.
-        routing.replace(RuleSnapshot(running: true, speech: false, websites: ["youtube.com"], applications: []))
+        routing.replace(RuleSnapshot(running: true, speech: false, websiteFiltering: true, websites: ["youtube.com"], applications: []))
         let one = [Float](repeating: 0, count: 512).withUnsafeBytes { Data($0) }.base64EncodedString()
         try BridgeWire.send(["type": "pcm", "stream": "youtube", "host": "youtube.com", "rate": 44100.0, "samples": one], to: fd)
         let blocked = try BridgeWire.receive(from: fd)
         precondition(blocked?["blocked"] as? Bool == true)
+        // Switching back to system-wide mode releases existing helper captures.
+        routing.replace(RuleSnapshot(running: true, speech: false, websites: ["instagram.com"], applications: []))
+        try BridgeWire.send(["type": "pcm", "stream": "youtube", "host": "youtube.com", "rate": 44100.0, "samples": one], to: fd)
+        let released = try BridgeWire.receive(from: fd)!
+        precondition(released["isolated"] as? Bool == false && released["released"] as? Bool == true)
         DispatchQueue.main.async {
             precondition(youtubeHits == 1, "Allowed tab should continue independently")
             precondition(blockedHits == 0, "Ignored website must never emit a keyboard event")
             server.stop()
-            print("PASS: local native messaging, ignored Instagram stream, independent YouTube stream, live rule changes")
+            print("PASS: local native messaging, ignored Instagram stream, independent YouTube stream, live rule changes, release back to system-wide mode")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { exit(0) }
         }
     } catch { fputs("Bridge test failed: \(error)\n", stderr); exit(1) }

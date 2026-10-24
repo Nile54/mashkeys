@@ -63,7 +63,7 @@ chrome.action.onClicked.addListener(async tab => {
   try {
     const config = await native({type: 'hello'});
     if (!config.ok) throw new Error(config.error || 'Open the MashKeys app first.');
-    if (!config.isolated) throw new Error('Add a website exclusion in MashKeys Settings to enable isolated browser tabs. Normal system capture already works without this helper.');
+    if (!config.isolated) throw new Error('MashKeys already listens system-wide without this helper. Enable optional Website filtering and select a site in MashKeys Settings only if you want isolated tabs.');
     const host = hostname(tab.url);
     if (!host) throw new Error('Open a normal website to connect its audio.');
     if (excluded(host, config.blockedSites || [])) throw new Error('This website is blocked in MashKeys Settings.');
@@ -82,7 +82,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message.type === 'pcm') {
     native({type: 'pcm', stream: String(message.tabId), host: message.host,
       rate: message.rate, samples: message.samples, browser: message.browser}).then(reply => {
-      if (reply.ok) badge(message.tabId, reply.blocked ? 'OFF' : 'ON',
+      if (reply.ok && !reply.released) badge(message.tabId, reply.blocked ? 'OFF' : 'ON',
         reply.blocked ? 'This website is blocked in MashKeys Settings.' : 'MashKeys connected · click to disconnect');
       respond(reply);
     });

@@ -42,7 +42,7 @@ async function start(message) {
       try {
         const reply = await chrome.runtime.sendMessage({target: 'background', type: 'pcm', tabId: message.tabId,
           host: session.host, rate: audio.sampleRate, samples: base64(event.data), browser: session.browser});
-        if (reply?.error && !reply?.busy) await stop(message.tabId);
+        if (reply?.released || reply?.isolated === false || (reply?.error && !reply?.busy)) await stop(message.tabId);
       } catch { await stop(message.tabId); }
       finally { session.busy = false; }
     };

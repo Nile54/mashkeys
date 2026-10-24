@@ -3,10 +3,11 @@ import Foundation
 struct RuleSnapshot {
     var running = false
     var speech = true
+    var websiteFiltering = false
     var websites: Set<String> = []
     var applications: Set<String> = []
     var events = 0
-    var isolatesBrowser: Bool { !websites.isEmpty }
+    var isolatesBrowser: Bool { websiteFiltering && !websites.isEmpty }
 
     func blocks(host: String) -> Bool {
         let host = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))

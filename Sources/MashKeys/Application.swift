@@ -21,7 +21,7 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
     private lazy var settings = SettingsWindow()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        defaults.register(defaults: ["speechProtection": true, "enabledLastSession": true])
+        defaults.register(defaults: ["speechProtection": true, "enabledLastSession": true, "websiteFilteringEnabled": false])
         if let keyboard = try? KeyboardBacklight() { animator = LightAnimator(keyboard: keyboard) }
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         status.button?.image = NSImage(systemSymbolName: "keyboard", accessibilityDescription: "MashKeys")
@@ -100,8 +100,8 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
         toggleItem.state = enabled ? .on : .off
         speechItem.state = defaults.bool(forKey: "speechProtection") ? .on : .off
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        let isolated = !(defaults.stringArray(forKey: "blockedWebsites") ?? []).isEmpty
-        let browser = isolated ? " · \(browserCount > 0 ? "Browser helper connected" : "Connect music tabs with helper")" : ""
+        let isolated = rules.snapshot.isolatesBrowser
+        let browser = isolated ? " · \(browserCount > 0 ? "Browser helper connected" : "Connect music tabs with helper")" : " · System-wide"
         statusLine.title = enabled ? captureStatus + browser : "Paused · ⌘⌥K to enable"
         status.button?.appearsDisabled = !enabled
         status.button?.toolTip = "MashKeys · \(enabled ? captureStatus : "Paused") · ⌘⌥K"
@@ -109,6 +109,7 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
 
     private func updateSnapshot() {
         rules.replace(RuleSnapshot(running: enabled, speech: defaults.bool(forKey: "speechProtection"),
+                                   websiteFiltering: defaults.bool(forKey: "websiteFilteringEnabled"),
                                    websites: Set(defaults.stringArray(forKey: "blockedWebsites") ?? []),
                                    applications: Set(defaults.stringArray(forKey: "blockedApplications") ?? []), events: eventCount))
     }

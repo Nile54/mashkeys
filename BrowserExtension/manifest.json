@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MashKeys Tab Audio",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Connect selected music tabs to MashKeys for independent website exclusions. Audio stays on this Mac.",
   "minimum_chrome_version": "116",
   "permissions": [

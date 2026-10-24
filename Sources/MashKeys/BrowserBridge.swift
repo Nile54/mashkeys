@@ -154,6 +154,13 @@ final class BrowserBridge {
                 let key = String(fd) + ":" + String((message["stream"] as? String ?? "").prefix(80))
                 if kind == "stop" { streams.removeValue(forKey: key)?.pipeline.stop() }
                 if kind == "pcm" {
+                    if !config.isolatesBrowser {
+                        // Older helper builds already stop their AudioContext on
+                        // an informational error. Release capture so normal tab
+                        // playback feeds the app's system-wide tap again.
+                        response["released"] = true
+                        response["error"] = "Website filtering is off; MashKeys is listening system-wide."
+                    }
                     guard let rawHost = message["host"] as? String, let host = RuleSnapshot.host(from: rawHost),
                           let rate = message["rate"] as? Double, rate >= 16000, rate <= 96000,
                           let encoded = message["samples"] as? String, let bytes = Data(base64Encoded: encoded),

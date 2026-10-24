@@ -94,7 +94,14 @@ var rules = RuleSnapshot(running: true, speech: true, websites: ["instagram.com"
 require(rules.blocks(host: "www.instagram.com"), "Subdomains must match")
 require(!rules.blocks(host: "instagram.com.evil.example"), "Similar hostnames must not match")
 require(!rules.blocks(host: "youtube.com"), "Other websites remain eligible")
-require(rules.captureExclusions.contains("com.google.Chrome"), "Isolated tabs must not leak through the mixed browser output")
+require(!rules.isolatesBrowser && !rules.captureExclusions.contains("com.google.Chrome"), "Saved website rules must not require an extension by default")
+require(rules.captureExclusions == ["com.apple.Music"], "Native app exclusions must work without a browser helper")
+rules.websiteFiltering = true
+require(rules.isolatesBrowser && rules.captureExclusions.contains("com.google.Chrome"), "Explicit website mode must isolate browser output")
+rules.websiteFiltering = false
+require(!rules.isolatesBrowser && rules.websites == ["instagram.com"], "Turning website mode off must restore system capture without losing saved rules")
+var emptySites = RuleSnapshot(websiteFiltering: true)
+require(!emptySites.isolatesBrowser, "An empty website list must never cut off browser audio")
 require(rules.blocks(application: "com.apple.Music.helper"), "App helper processes must be excluded too")
 require(RuleSnapshot.host(from: "https://www.Instagram.com/reels/") == "instagram.com", "URL entry should normalize")
 print("PASS: optimistic speech guard, vocals/rap, stale recovery, full-range adaptive rise, first-play bass, isolation, live drops, gains and frame sizes")
