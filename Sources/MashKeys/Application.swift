@@ -22,6 +22,10 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         defaults.register(defaults: ["speechProtection": true, "enabledLastSession": true, "websiteFilteringEnabled": false])
+        // A removed helper must not leave native browser capture excluded on launch.
+        if defaults.bool(forKey: "websiteFilteringEnabled") && !BrowserInstaller.isRegistered {
+            defaults.set(false, forKey: "websiteFilteringEnabled")
+        }
         if let keyboard = try? KeyboardBacklight() { animator = LightAnimator(keyboard: keyboard) }
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         status.button?.image = NSImage(systemSymbolName: "keyboard", accessibilityDescription: "MashKeys")
@@ -101,7 +105,7 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
         speechItem.state = defaults.bool(forKey: "speechProtection") ? .on : .off
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         let isolated = rules.snapshot.isolatesBrowser
-        let browser = isolated ? " · \(browserCount > 0 ? "Browser helper connected" : "Connect music tabs with helper")" : " · System-wide"
+        let browser = isolated ? " · Connected tabs only · \(browserCount > 0 ? "Helper connected" : "No helper connected")" : " · System-wide"
         statusLine.title = enabled ? captureStatus + browser : "Paused · ⌘⌥K to enable"
         status.button?.appearsDisabled = !enabled
         status.button?.toolTip = "MashKeys · \(enabled ? captureStatus : "Paused") · ⌘⌥K"
@@ -116,6 +120,9 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
 
     private func applyRules() {
         let before = rules.snapshot
+        if defaults.bool(forKey: "websiteFilteringEnabled") && !BrowserInstaller.isRegistered {
+            defaults.set(false, forKey: "websiteFilteringEnabled")
+        }
         updateSnapshot()
         let after = rules.snapshot
         capture.setSpeechProtection(after.speech)

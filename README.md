@@ -39,11 +39,13 @@ Open **MashKeys → Settings**.
 
 **Whole apps:** check an app under “Ignore whole apps.” Its audio is removed from MashKeys’ native capture. It is not muted. Helper processes are covered. Changing app rules or starting a newly allowed app may briefly rebuild the filtered capture.
 
-**Websites (optional):** explicitly enable **Website filtering (optional)**, then select a domain such as `instagram.com`. Merely having saved rules does not change normal system capture. This mode uses **strict browser-tab isolation**, not “pause everything while Instagram is open.” Connected YouTube music and native apps can keep driving the keyboard while Instagram is ignored.
+**Connected browser tabs (advanced):** this is not an automatic website blocklist. After setting up the browser helper, explicitly enable **Use connected tabs only**, then select a domain such as `instagram.com`. Merely having saved rules does not change normal system capture. This mode uses **strict browser-tab isolation**, not “pause everything while Instagram is open.” Connected YouTube music and native apps can keep driving the keyboard while Instagram is ignored.
+
+The mode is unavailable until the local helper bridge is set up. Enabling it explains that all unconnected tabs will be excluded and offers to keep automatic system capture. If the local helper registration is removed, the mode resets to off on the next app launch. Registration alone does not prove that the extension is installed or a music tab is connected.
 
 This requires the included Chrome/Edge/Brave helper. Chrome requires a user gesture to capture a tab, so click the helper once on each music tab you want connected. While optional website filtering is active, **unconnected browser tabs also do not drive the lights**. Your audio remains audible. Native apps continue automatically. Safari/Firefox website-level isolation is not supported; whole-app exclusion is available instead.
 
-Leave **Website filtering (optional)** off to listen everywhere with no helper, tab connections or extra setup. Speech suppression and whole-app exclusions still work. Saved website rules remain available but inactive. See [the browser helper guide](docs/browser-helper.md) only if you want that optional mode.
+Leave **Use connected tabs only** off to listen everywhere with no helper, tab connections or extra setup. Speech suppression and whole-app exclusions still work. Saved website rules remain available but inactive. See [the browser helper guide](docs/browser-helper.md) only if you want that optional mode.
 
 ## Compatibility
 

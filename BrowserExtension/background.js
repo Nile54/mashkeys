@@ -63,7 +63,7 @@ chrome.action.onClicked.addListener(async tab => {
   try {
     const config = await native({type: 'hello'});
     if (!config.ok) throw new Error(config.error || 'Open the MashKeys app first.');
-    if (!config.isolated) throw new Error('MashKeys already listens system-wide without this helper. Enable optional Website filtering and select a site in MashKeys Settings only if you want isolated tabs.');
+    if (!config.isolated) throw new Error('MashKeys already listens system-wide without this helper. Enable Use connected tabs only and select a site in MashKeys Settings only if you want isolated tabs.');
     const host = hostname(tab.url);
     if (!host) throw new Error('Open a normal website to connect its audio.');
     if (excluded(host, config.blockedSites || [])) throw new Error('This website is blocked in MashKeys Settings.');

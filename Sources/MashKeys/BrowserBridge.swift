@@ -159,7 +159,7 @@ final class BrowserBridge {
                         // an informational error. Release capture so normal tab
                         // playback feeds the app's system-wide tap again.
                         response["released"] = true
-                        response["error"] = "Website filtering is off; MashKeys is listening system-wide."
+                        response["error"] = "Connected-tabs mode is off; MashKeys is listening system-wide."
                     }
                     guard let rawHost = message["host"] as? String, let host = RuleSnapshot.host(from: rawHost),
                           let rate = message["rate"] as? Double, rate >= 16000, rate <= 96000,

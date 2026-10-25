@@ -49,7 +49,7 @@ final class SettingsWindow: NSWindowController {
         privacy.textColor = .secondaryLabelColor
         privacy.frame = NSRect(x: 22, y: 449, width: 435, height: 42); view.addSubview(privacy)
 
-        websiteMode = NSButton(checkboxWithTitle: "Website filtering (optional)", target: self, action: #selector(websiteModeChanged))
+        websiteMode = NSButton(checkboxWithTitle: "Use connected tabs only", target: self, action: #selector(websiteModeChanged))
         websiteMode.frame = NSRect(x: 22, y: 413, width: 220, height: 24); view.addSubview(websiteMode)
         let setup = NSButton(title: "Set up browser helper…", target: self, action: #selector(setupBrowser))
         setup.bezelStyle = .rounded; setup.frame = NSRect(x: 252, y: 409, width: 208, height: 30); view.addSubview(setup)
@@ -85,12 +85,19 @@ final class SettingsWindow: NSWindowController {
 
     private func refreshSites() {
         clear(sites)
+        let registered = BrowserInstaller.isRegistered
         let active = defaults.bool(forKey: "websiteFilteringEnabled")
+        websiteMode.isEnabled = registered
+        websiteMode.state = active ? .on : .off
         hostField.isEnabled = active
         addButton.isEnabled = active
-        websiteExplanation.stringValue = active
-            ? "On: connect music tabs with the browser helper. Checked sites and unconnected tabs do not drive the lights; other apps stay automatic."
-            : "Off: listen everywhere without an extension. Saved website rules below are inactive. Speech filtering and app exclusions still work."
+        if !registered {
+            websiteExplanation.stringValue = "Helper not set up: listening to all websites. Saved site rules are inactive. Automatic website exclusions are not supported."
+        } else {
+            websiteExplanation.stringValue = active
+                ? "Only manually connected browser tabs drive the lights. Checked domains block connected tabs. Unchecked sites are not connected automatically."
+                : "Off: listen to all websites automatically. Saved site rules are inactive. This advanced mode requires the helper and a connection for each music tab."
+        }
         let blocked = Set(defaults.stringArray(forKey: "blockedWebsites") ?? [])
         for host in Set(presetSites).union(blocked).sorted() {
             let button = NSButton(checkboxWithTitle: host, target: self, action: #selector(siteChanged(_:)))
@@ -119,10 +126,22 @@ final class SettingsWindow: NSWindowController {
 
     @objc private func speechChanged() { defaults.set(speechButton.state == .on, forKey: "speechProtection"); onChange?() }
     @objc private func websiteModeChanged() {
+        guard BrowserInstaller.isRegistered else {
+            defaults.set(false, forKey: "websiteFilteringEnabled")
+            refreshSites(); onChange?(); return
+        }
+        if websiteMode.state == .on {
+            let alert = NSAlert()
+            alert.messageText = "Use only manually connected browser tabs?"
+            alert.informativeText = "Every unconnected Chrome, Edge or Brave tab will stop driving the lights, including unchecked websites such as YouTube. Load the MashKeys browser helper and click it on each music tab. Checked domains exclude connected tabs. Other apps keep working automatically."
+            alert.addButton(withTitle: "Keep all websites automatic")
+            alert.addButton(withTitle: "Use connected tabs only")
+            if alert.runModal() != .alertSecondButtonReturn { websiteMode.state = .off }
+        }
         defaults.set(websiteMode.state == .on, forKey: "websiteFilteringEnabled")
         refreshSites(); onChange?()
     }
-    @objc private func setupBrowser() { BrowserInstaller.showInstructions() }
+    @objc private func setupBrowser() { BrowserInstaller.showInstructions(); refreshSites() }
     @objc private func addSite() {
         guard let host = RuleSnapshot.host(from: hostField.stringValue) else { NSSound.beep(); return }
         var blocked = Set(defaults.stringArray(forKey: "blockedWebsites") ?? [])

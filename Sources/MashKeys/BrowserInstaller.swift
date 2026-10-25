@@ -2,6 +2,24 @@ import AppKit
 
 enum BrowserInstaller {
     static let nativeName = "io.github.nile54.mashkeys"
+    private static let browserHomes = [("com.google.Chrome", "Google/Chrome"), ("com.microsoft.edgemac", "Microsoft Edge"),
+                                       ("com.brave.Browser", "BraveSoftware/Brave-Browser")]
+    // This checks our own native-host setup, not whether Chrome has loaded an
+    // extension. The UI separately explains the manual tab-connection requirement.
+    static var isRegistered: Bool {
+        guard !extensionID.isEmpty else { return false }
+        let base = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
+        let helper = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/MashKeysBridge").path
+        return browserHomes.contains { _, folder in
+            let path = base.appendingPathComponent(folder).appendingPathComponent("NativeMessagingHosts/" + nativeName + ".json")
+            guard let data = try? Data(contentsOf: path),
+                  let manifest = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
+            return manifest["name"] as? String == nativeName && manifest["path"] as? String == helper &&
+                manifest["type"] as? String == "stdio" &&
+                manifest["allowed_origins"] as? [String] == ["chrome-extension://\(extensionID)/"] &&
+                FileManager.default.isExecutableFile(atPath: helper)
+        }
+    }
     // Filled from the extension's fixed public key by scripts/build.sh.
     static var extensionID: String {
         guard let url = Bundle.main.url(forResource: "extension-id", withExtension: "txt"),
@@ -16,10 +34,8 @@ enum BrowserInstaller {
         let manifest: [String: Any] = ["name": nativeName, "description": "MashKeys local tab-audio bridge",
                                       "path": helper.path, "type": "stdio",
                                       "allowed_origins": ["chrome-extension://\(extensionID)/"]]
-        let homes = [("com.google.Chrome", "Google/Chrome"), ("com.microsoft.edgemac", "Microsoft Edge"),
-                     ("com.brave.Browser", "BraveSoftware/Brave-Browser")]
         let base = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        for (bundle, folder) in homes where NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) != nil {
+        for (bundle, folder) in browserHomes where NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) != nil {
             let destination = base.appendingPathComponent(folder).appendingPathComponent("NativeMessagingHosts")
             try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
             try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])

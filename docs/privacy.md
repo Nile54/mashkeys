@@ -12,7 +12,7 @@ MashKeys processes audio locally. It does not save, upload or transcribe audio, 
 
 ## Optional browser helper
 
-This helper is not required in the default system-wide mode. It is used only when Website filtering is explicitly switched on.
+This helper is not required in the default system-wide mode. It is used only when connected-tabs mode is explicitly switched on.
 
 Permissions are `activeTab`, `tabCapture`, `tabs`, `offscreen` and `nativeMessaging`. There are no all-site content scripts and no remote server. Tab permission allows the helper to keep track of the selected tab’s hostname after navigation.
 
