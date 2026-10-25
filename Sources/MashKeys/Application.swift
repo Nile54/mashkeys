@@ -4,8 +4,7 @@ import ServiceManagement
 final class MashKeysApplication: NSObject, NSApplicationDelegate {
     private let defaults = UserDefaults.standard
     private let capture = AudioTap()
-    private let rules = RoutingRules()
-    private var bridge: BrowserBridge!
+    private var rules = RuleSnapshot()
     private var animator: LightAnimator?
     private var shortcut: GlobalShortcut?
     private var status: NSStatusItem!
@@ -15,26 +14,22 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
     private var loginItem = NSMenuItem()
     private var enabled = false
     private var captureStatus = "Paused"
-    private var browserCount = 0
-    private var eventCount = 0
     private var window: NSWindow?
     private lazy var settings = SettingsWindow()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        defaults.register(defaults: ["speechProtection": true, "enabledLastSession": true, "websiteFilteringEnabled": false])
-        // A removed helper must not leave native browser capture excluded on launch.
-        if defaults.bool(forKey: "websiteFilteringEnabled") && !BrowserInstaller.isRegistered {
-            defaults.set(false, forKey: "websiteFilteringEnabled")
-        }
+        defaults.register(defaults: ["speechProtection": true, "enabledLastSession": true])
+        LegacyBrowserCleanup.run(defaults: defaults)
         if let keyboard = try? KeyboardBacklight() { animator = LightAnimator(keyboard: keyboard) }
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         status.button?.image = NSImage(systemSymbolName: "keyboard", accessibilityDescription: "MashKeys")
         status.button?.toolTip = "MashKeys · ⌘⌥K toggles music lights"
         makeMenu()
         settings.onChange = { [weak self] in self?.applyRules() }
+        settings.onToggleMusic = { [weak self] in self?.toggle() }
+        settings.isMusicEnabled = { [weak self] in self?.enabled ?? false }
         capture.onHit = { [weak self] hit in
             guard let self, self.enabled else { return }
-            self.eventCount += 1; self.updateSnapshot()
             self.captureStatus = "Listening for bass"; self.animator?.react(to: hit); self.render()
         }
         capture.onSpeech = { [weak self] blocked in
@@ -46,19 +41,10 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
         capture.onStatus = { [weak self] text in self?.captureStatus = text; self?.render() }
         capture.onFailure = { [weak self] message in
             guard let self else { return }
-            self.enabled = false; self.animator?.stop(); self.updateSnapshot()
+            self.enabled = false; self.animator?.stop()
             self.captureStatus = "Audio access needs attention"; self.render()
             self.showError(message)
         }
-        bridge = BrowserBridge(rules: rules)
-        bridge.onHit = { [weak self] hit, source in
-            guard let self, self.enabled else { return }
-            self.eventCount += 1; self.updateSnapshot()
-            self.captureStatus = "Listening to music tab"; self.animator?.react(to: hit, source: source); self.render()
-        }
-        bridge.onSpeech = { [weak self] blocked, source in if blocked { self?.animator?.speechBegan(source: source) } }
-        bridge.onConnection = { [weak self] count in self?.browserCount = count; self?.render() }
-        do { try bridge.start() } catch { captureStatus = "Browser helper unavailable" }
         do { shortcut = try GlobalShortcut(); shortcut?.onToggle = { [weak self] in self?.toggle() } }
         catch { showError(error.localizedDescription) }
         updateSnapshot()
@@ -101,33 +87,23 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
 
     private func render() {
         guard status != nil else { return }
+        settings.refreshMusicState()
         toggleItem.state = enabled ? .on : .off
         speechItem.state = defaults.bool(forKey: "speechProtection") ? .on : .off
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        let isolated = rules.snapshot.isolatesBrowser
-        let browser = isolated ? " · Connected tabs only · \(browserCount > 0 ? "Helper connected" : "No helper connected")" : " · System-wide"
-        statusLine.title = enabled ? captureStatus + browser : "Paused · ⌘⌥K to enable"
+        statusLine.title = enabled ? captureStatus + " · System-wide" : "Paused · ⌘⌥K to enable"
         status.button?.appearsDisabled = !enabled
         status.button?.toolTip = "MashKeys · \(enabled ? captureStatus : "Paused") · ⌘⌥K"
     }
 
-    private func updateSnapshot() {
-        rules.replace(RuleSnapshot(running: enabled, speech: defaults.bool(forKey: "speechProtection"),
-                                   websiteFiltering: defaults.bool(forKey: "websiteFilteringEnabled"),
-                                   websites: Set(defaults.stringArray(forKey: "blockedWebsites") ?? []),
-                                   applications: Set(defaults.stringArray(forKey: "blockedApplications") ?? []), events: eventCount))
-    }
+    private func updateSnapshot() { rules = RuleSnapshot.load(from: defaults) }
 
     private func applyRules() {
-        let before = rules.snapshot
-        if defaults.bool(forKey: "websiteFilteringEnabled") && !BrowserInstaller.isRegistered {
-            defaults.set(false, forKey: "websiteFilteringEnabled")
-        }
+        let before = rules
         updateSnapshot()
-        let after = rules.snapshot
-        capture.setSpeechProtection(after.speech)
-        if enabled && before.captureExclusions != after.captureExclusions {
-            capture.start(excluding: after.captureExclusions, speech: after.speech)
+        capture.setSpeechProtection(rules.speech)
+        if enabled && before.captureExclusions != rules.captureExclusions {
+            capture.start(excluding: rules.captureExclusions, speech: rules.speech)
         }
         render()
     }
@@ -154,17 +130,17 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
             defaults.set(true, forKey: "onboardingDone")
             window?.close()
             enabled = true; updateSnapshot(); captureStatus = "Starting audio…"
-            let config = rules.snapshot
+            let config = rules
             capture.start(excluding: config.captureExclusions, speech: config.speech)
         } else {
-            enabled = false; updateSnapshot(); capture.stop(); animator?.stop(); captureStatus = "Paused"
+            enabled = false; capture.stop(); animator?.stop(); captureStatus = "Paused"
         }
         defaults.set(value, forKey: "enabledLastSession")
         render()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        enabled = false; updateSnapshot(); capture.finish(); animator?.stop(); bridge.stop(); shortcut = nil
+        enabled = false; capture.finish(); animator?.stop(); shortcut = nil
     }
 
     private func showError(_ text: String) {

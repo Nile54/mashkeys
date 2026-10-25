@@ -4,9 +4,9 @@
 
 Music for your MacBook keyboard. Smooth, full-range bass pulses that follow the music’s pace and volume—with live drop accents, local speech filtering, and a global **⌘⌥K** toggle.
 
-**[Download MashKeys](https://github.com/Nile54/mashkeys/releases/latest)** · [Browser helper setup](docs/browser-helper.md) · [Privacy](docs/privacy.md)
+**[Download MashKeys](https://github.com/Nile54/mashkeys/releases/latest)** · [Privacy](docs/privacy.md)
 
-**Normal music listening needs no browser extension.** MashKeys captures system audio from all apps and websites automatically. The browser helper is an optional extra only for individual-site exclusions.
+**One app, no browser extension.** MashKeys captures system audio from all apps and websites automatically. There are no tab connections or browser-helper setup steps.
 
 MashKeys is a standalone Swift app. It does not require or install another keyboard visualizer, virtual audio driver, Python service, or cloud account.
 
@@ -33,19 +33,15 @@ If audio access was denied, enable MashKeys under **Privacy & Security → Scree
 
 Stopping or quitting restores your previous brightness, automatic-brightness setting and idle dimming. Start at login is optional in the menu.
 
-## Ignore apps and websites
+## Music lights and app exclusions
 
-Open **MashKeys → Settings**.
+Open **MashKeys → Settings**. **Music lights — all apps and websites** is the main on/off switch. It stays in sync with the menu and **⌘⌥K** shortcut. When on, YouTube and other websites are eligible automatically.
 
-**Whole apps:** check an app under “Ignore whole apps.” Its audio is removed from MashKeys’ native capture. It is not muted. Helper processes are covered. Changing app rules or starting a newly allowed app may briefly rebuild the filtered capture.
+Check an app under **Ignore whole apps (checked = ignored)** to exclude its audio from lighting. The app stays audible, and helper processes are covered. Changing app rules or starting a newly allowed app may briefly rebuild the filtered capture.
 
-**Connected browser tabs (advanced):** this is not an automatic website blocklist. After setting up the browser helper, explicitly enable **Use connected tabs only**, then select a domain such as `instagram.com`. Merely having saved rules does not change normal system capture. This mode uses **strict browser-tab isolation**, not “pause everything while Instagram is open.” Connected YouTube music and native apps can keep driving the keyboard while Instagram is ignored.
+**Individual website exclusions are unavailable.** The native audio capture does not provide website identities for the browser mix. Earlier releases offered manually connected browser tabs, which excluded unchecked sites unless connected too; that mode and its extension have been removed. Old website selections never exclude Chrome from capture. If you installed the old extension, remove **MashKeys Tab Audio** from your browser; MashKeys does not use it.
 
-The mode is unavailable until the local helper bridge is set up. Enabling it explains that all unconnected tabs will be excluded and offers to keep automatic system capture. If the local helper registration is removed, the mode resets to off on the next app launch. Registration alone does not prove that the extension is installed or a music tab is connected.
-
-This requires the included Chrome/Edge/Brave helper. Chrome requires a user gesture to capture a tab, so click the helper once on each music tab you want connected. While optional website filtering is active, **unconnected browser tabs also do not drive the lights**. Your audio remains audible. Native apps continue automatically. Safari/Firefox website-level isolation is not supported; whole-app exclusion is available instead.
-
-Leave **Use connected tabs only** off to listen everywhere with no helper, tab connections or extra setup. Speech suppression and whole-app exclusions still work. Saved website rules remain available but inactive. See [the browser helper guide](docs/browser-helper.md) only if you want that optional mode.
+On upgrading, MashKeys removes its obsolete local browser-host registration and ignores the old connected-tabs setting. Speech filtering, app exclusions and login preferences are preserved.
 
 ## Compatibility
 
@@ -68,9 +64,9 @@ cd mashkeys
 open .build/MashKeys.app
 ```
 
-`build.sh` builds both CPU architectures, generates the original icon, bundles the browser helper and signs the app ad hoc. To use your own signing certificate, set `CODESIGN_IDENTITY`. No signing credentials are included in this repository. `./scripts/package.sh` creates the DMG, ZIP and checksums in `dist/`.
+`build.sh` builds both CPU architectures, generates the original icon and signs the standalone app ad hoc. To use your own signing certificate, set `CODESIGN_IDENTITY`. No signing credentials are included in this repository. `./scripts/package.sh` creates the DMG, ZIP and checksums in `dist/`.
 
-Tests generate their own signals; no user song or captured audio is distributed. They cover first-play bass response, smooth full-depth recovery, tempo/volume adaptation, live drop accents, gain changes, irregular audio buffers, speech decision policy, site rules, the local browser bridge and packet mixing. CI builds the universal app. Automated tests do **not** prove optical LED timing or compatibility with every Mac.
+Tests generate their own signals; no user song or captured audio is distributed. They cover first-play bass response, smooth full-depth recovery, tempo/volume adaptation, live drop accents, gain changes, irregular audio buffers, speech decision policy, whole-app rules and legacy website-setting regression coverage. CI builds the universal app. Automated tests do **not** prove optical LED timing or compatibility with every Mac.
 
 For an additional local classifier check, run `./scripts/test-audio.sh spoken-44100.wav music-44100.wav` with your own 44.1 kHz files. This analyzes them without playing, recording, or uploading them.
 
@@ -83,10 +79,10 @@ For an additional local classifier check, run `./scripts/test-audio.sh spoken-44
 | `AudioTap.swift` | System capture, allowed-process mixes and output-device changes |
 | `SpeechGuard.swift` | Bounded, on-device SoundAnalysis worker |
 | `KeyboardBacklight.swift` / `LightAnimator.swift` | Hardware snapshots, immediate writes and smooth recovery |
-| `BrowserBridge.swift` / `BrowserExtension/` | Independent, explicitly connected browser-tab audio |
-| `Rules.swift` / `SettingsWindow.swift` | App and domain exclusions |
+| `Rules.swift` / `SettingsWindow.swift` | System-wide toggle and app exclusions |
+| `LegacyBrowserCleanup.swift` | Removal of obsolete local browser-host registrations |
 | `GlobalShortcut.swift` | Carbon registration of ⌘⌥K, without keystroke monitoring |
 
-Audio capture uses [Apple’s CoreAudio process taps](https://developer.apple.com/documentation/coreaudio/capturing-system-audio-with-core-audio-taps); speech checks use [SoundAnalysis](https://developer.apple.com/documentation/soundanalysis). Browser isolation follows [Chrome’s tabCapture permission model](https://developer.chrome.com/docs/extensions/reference/api/tabCapture).
+Audio capture uses [Apple’s CoreAudio process taps](https://developer.apple.com/documentation/coreaudio/capturing-system-audio-with-core-audio-taps); speech checks use [SoundAnalysis](https://developer.apple.com/documentation/soundanalysis).
 
 MIT licensed. Built by Nilesh Nandakumar.

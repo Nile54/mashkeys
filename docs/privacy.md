@@ -10,16 +10,10 @@ MashKeys processes audio locally. It does not save, upload or transcribe audio, 
 - **Login item:** optional and controlled from the menu.
 - Preferences store only light state, speech preference, app/domain exclusions, login preference and a temporary brightness recovery snapshot.
 
-## Optional browser helper
+## Browsers
 
-This helper is not required in the default system-wide mode. It is used only when connected-tabs mode is explicitly switched on.
+MashKeys uses native system audio capture. It does not install or use a browser extension, read tab URLs, inspect page content or collect browsing history. Websites are handled as part of the browser's audio output. Individual website exclusions are unavailable; whole-app exclusions are supported.
 
-Permissions are `activeTab`, `tabCapture`, `tabs`, `offscreen` and `nativeMessaging`. There are no all-site content scripts and no remote server. Tab permission allows the helper to keep track of the selected tab’s hostname after navigation.
-
-Only explicitly connected tab audio is streamed. Its **hostname**, sample rate, tab stream identifier and short PCM packets travel over local IPC. Full URLs, titles, page contents, messages, passwords and browsing history are not sent to MashKeys or to an external service. No audio file is created.
-
-The app checks website/app rules before processing a browser stream. Local IPC uses a socket with owner-only permissions and checks the connecting user’s identity. Packets and stream counts are bounded.
-
-When music lights are paused, system capture stops. A connected browser tab may remain routed through its local AudioContext to preserve playback; incoming packets are discarded until lights are enabled again. Disconnect the tab through the helper to release that capture.
+When upgrading from a release with the old browser helper, MashKeys removes only its own obsolete local native-messaging registrations and ignores old website-mode preferences. Old saved domains are not used. An installed copy of the retired extension can be removed from the browser.
 
 Speech classification is probabilistic and takes a short window. Unknown and stale results do not hold a song hostage; an initial speech pulse or a mixed-content mistake is possible.

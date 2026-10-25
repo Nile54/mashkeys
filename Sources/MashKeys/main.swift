@@ -1,9 +1,5 @@
 import AppKit
 
-if URL(fileURLWithPath: CommandLine.arguments[0]).lastPathComponent == "MashKeysBridge" {
-    runBrowserNativeHost()
-}
-
 if let identifier = Bundle.main.bundleIdentifier,
    let existing = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
         .first(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && $0.executableURL?.lastPathComponent == "MashKeys" }) {

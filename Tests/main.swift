@@ -90,18 +90,20 @@ for (a, b) in zip(reference, quiet) {
     require(abs(a.time - b.time) < 0.0001 && abs(a.volume - b.volume) < 0.01 && a.isDrop == b.isDrop, "Relative response must be gain independent")
 }
 
-var rules = RuleSnapshot(running: true, speech: true, websites: ["instagram.com"], applications: ["com.apple.Music"])
-require(rules.blocks(host: "www.instagram.com"), "Subdomains must match")
-require(!rules.blocks(host: "instagram.com.evil.example"), "Similar hostnames must not match")
-require(!rules.blocks(host: "youtube.com"), "Other websites remain eligible")
-require(!rules.isolatesBrowser && !rules.captureExclusions.contains("com.google.Chrome"), "Saved website rules must not require an extension by default")
-require(rules.captureExclusions == ["com.apple.Music"], "Native app exclusions must work without a browser helper")
-rules.websiteFiltering = true
-require(rules.isolatesBrowser && rules.captureExclusions.contains("com.google.Chrome"), "Explicit website mode must isolate browser output")
-rules.websiteFiltering = false
-require(!rules.isolatesBrowser && rules.websites == ["instagram.com"], "Turning website mode off must restore system capture without losing saved rules")
-var emptySites = RuleSnapshot(websiteFiltering: true)
-require(!emptySites.isolatesBrowser, "An empty website list must never cut off browser audio")
+// Regression: even a persisted connected-tabs setting from older releases must
+// leave Chrome in the normal system mix, without any browser helper.
+let suite = "io.github.Nile54.MashKeys.tests." + UUID().uuidString
+let preferences = UserDefaults(suiteName: suite)!
+preferences.set(true, forKey: "websiteFilteringEnabled")
+preferences.set(["instagram.com", "x.com"], forKey: "blockedWebsites")
+preferences.set(["com.apple.Music"], forKey: "blockedApplications")
+var rules = RuleSnapshot.load(from: preferences)
+require(rules.speech, "Speech protection defaults on")
+require(rules.captureExclusions == ["com.apple.Music"], "Old website mode must not exclude Chrome or any other browser")
 require(rules.blocks(application: "com.apple.Music.helper"), "App helper processes must be excluded too")
-require(RuleSnapshot.host(from: "https://www.Instagram.com/reels/") == "instagram.com", "URL entry should normalize")
-print("PASS: optimistic speech guard, vocals/rap, stale recovery, full-range adaptive rise, first-play bass, isolation, live drops, gains and frame sizes")
+preferences.set(["com.google.Chrome"], forKey: "blockedApplications")
+preferences.set(false, forKey: "speechProtection")
+rules = RuleSnapshot.load(from: preferences)
+require(rules.captureExclusions == ["com.google.Chrome"] && !rules.speech, "Explicit whole-app exclusions and speech setting must remain effective")
+preferences.removePersistentDomain(forName: suite)
+print("PASS: speech guard, vocals/rap, stale recovery, full-range adaptive rise, first-play bass, live drops, gains, frame sizes and extension-free capture rules")
