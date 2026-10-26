@@ -21,7 +21,7 @@ require(speech.permits(at: 3), "A stale classifier must not force a replay")
 func settled(_ spacing: Double, _ volume: Float) -> Double {
     var timing = RiseTiming()
     var duration = 0.0
-    for i in 0..<12 { duration = timing.duration(for: BassHit(time: Double(i) * spacing, volume: volume, isDrop: false)) }
+    for i in 0..<12 { duration = timing.duration(for: AudioHit(time: Double(i) * spacing, volume: volume, isDrop: false)) }
     return duration
 }
 require(settled(0.3, 0.5) < settled(1, 0.5) / 2, "Tempo must change recovery speed")
@@ -59,9 +59,9 @@ func synthesize(frequency: Double, length: Double = 1, sections: Bool = false) -
     }
 }
 
-func detect(_ samples: [Float], frames: Int = 512, gain: Float = 1) -> [BassHit] {
-    let analyzer = BassSpectrum(sampleRate: 44100)
-    var hits: [BassHit] = []
+func detect(_ samples: [Float], frames: Int = 512, gain: Float = 1, settings: ReactionSettings = ReactionSettings()) -> [AudioHit] {
+    let analyzer = AudioSpectrum(sampleRate: 44100, settings: settings)
+    var hits: [AudioHit] = []
     var scaled = samples.map { $0 * gain }
     scaled.withUnsafeMutableBufferPointer { pointer in
         var offset = 0
@@ -90,6 +90,50 @@ for (a, b) in zip(reference, quiet) {
     require(abs(a.time - b.time) < 0.0001 && abs(a.volume - b.volume) < 0.01 && a.isDrop == b.isDrop, "Relative response must be gain independent")
 }
 
+// Isolated carriers select the intended band; full mix accepts all three.
+for (source, carrier) in [(BeatSource.bass, 80.0), (.mids, 1000.0), (.treble, 5000.0)] {
+    let settings = ReactionSettings(source: source)
+    require(!detect(synthesize(frequency: carrier), settings: settings).isEmpty, "Selected band must react on first play: \(source)")
+    for other in [80.0, 1000.0, 5000.0] where other != carrier {
+        require(detect(synthesize(frequency: other), settings: settings).isEmpty, "Selected band must reject other carriers: \(source), \(other)")
+    }
+    require(!detect(synthesize(frequency: carrier), settings: ReactionSettings(source: .fullMix)).isEmpty, "Full mix must include each carrier")
+}
+for source in BeatSource.allCases {
+    for sensitivity in [0.0, 0.5, 1.0] {
+        require(detect([Float](repeating: 0, count: 44100), settings: ReactionSettings(source: source, sensitivity: sensitivity)).isEmpty, "Sensitivity must never turn silence into beats")
+    }
+}
+
+// A steady background plus modest and strong crests exposes the sensitivity range.
+let textured: [Float] = (0..<Int(44100 * 9)).map { i in
+    let t = Double(i) / 44100
+    var amplitude = 0.10
+    for beat in 0..<20 {
+        let dt = t - (0.5 + Double(beat) * 0.4)
+        if dt >= 0 && dt < 0.25 { amplitude += (beat % 4 == 0 ? 0.28 : 0.045) * exp(-dt / 0.06) }
+    }
+    return Float(amplitude * sin(2 * .pi * 80 * t))
+}
+let sparseHits = detect(textured, settings: ReactionSettings(sensitivity: 0))
+let normalHits = detect(textured)
+let frequentHits = detect(textured, settings: ReactionSettings(sensitivity: 1))
+require(sparseHits.count < frequentHits.count, "Higher sensitivity must detect more modest hits (\(sparseHits.count) vs \(frequentHits.count))")
+require(sparseHits.count <= normalHits.count && normalHits.count <= frequentHits.count, "Sensitivity should increase hit counts across the slider")
+var lowTiming = RiseTiming(), highTiming = RiseTiming()
+let testHit = AudioHit(time: 0, volume: 0.5, isDrop: false)
+require(highTiming.duration(for: testHit, reaction: ReactionSettings(sensitivity: 1)) < lowTiming.duration(for: testHit, reaction: ReactionSettings(sensitivity: 0)), "Higher sensitivity should also permit more visible pulses through a shorter smooth recovery")
+
+// Changing source on the running analyzer must take effect without rebuilding capture.
+let liveSpectrum = AudioSpectrum(sampleRate: 44100)
+var liveHits = 0
+let midKick = synthesize(frequency: 1000)
+midKick.withUnsafeBufferPointer { liveSpectrum.consume($0.baseAddress!, frames: $0.count, endingAt: 1) { _ in liveHits += 1 } }
+require(liveHits == 0, "Bass should reject the midrange test before switching")
+liveSpectrum.configure(ReactionSettings(source: .mids))
+midKick.withUnsafeBufferPointer { liveSpectrum.consume($0.baseAddress!, frames: $0.count, endingAt: 2) { _ in liveHits += 1 } }
+require(liveHits > 0, "Live source changes should start detecting the new band immediately")
+
 // Regression: even a persisted connected-tabs setting from older releases must
 // leave Chrome in the normal system mix, without any browser helper.
 let suite = "io.github.Nile54.MashKeys.tests." + UUID().uuidString
@@ -105,5 +149,11 @@ preferences.set(["com.google.Chrome"], forKey: "blockedApplications")
 preferences.set(false, forKey: "speechProtection")
 rules = RuleSnapshot.load(from: preferences)
 require(rules.captureExclusions == ["com.google.Chrome"] && !rules.speech, "Explicit whole-app exclusions and speech setting must remain effective")
+preferences.set("treble", forKey: "beatSource")
+preferences.set(0.8, forKey: "sensitivity")
+require(RuleSnapshot.load(from: preferences).reaction == ReactionSettings(source: .treble, sensitivity: 0.8), "Source and sensitivity must survive preference loading")
+preferences.set("invalid", forKey: "beatSource")
+preferences.set(900, forKey: "sensitivity")
+require(ReactionSettings.load(from: preferences) == ReactionSettings(sensitivity: 1), "Invalid preferences must use a valid source and bounded sensitivity")
 preferences.removePersistentDomain(forName: suite)
-print("PASS: speech guard, vocals/rap, stale recovery, full-range adaptive rise, first-play bass, live drops, gains, frame sizes and extension-free capture rules")
+print("PASS: speech guard, vocals/rap, stale recovery, full-range adaptive rise, first-play bass, live drops, gains, frame sizes, extension-free capture rules, frequency sources and sensitivity (\(sparseHits.count)/\(normalHits.count)/\(frequentHits.count) hits)")

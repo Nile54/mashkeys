@@ -14,14 +14,16 @@ enum CaptureProblem: LocalizedError {
 }
 
 final class AudioPipeline {
-    let spectrum: BassSpectrum
+    let spectrum: AudioSpectrum
+    private let reaction: ReactionControl
     let speech: SpeechGuard?
-    let onHit: (BassHit) -> Void
+    let onHit: (AudioHit) -> Void
     private var mono = [Float](repeating: 0, count: 16384)
 
-    init(rate: Double, guardSpeech: Bool, onHit: @escaping (BassHit) -> Void, onSpeech: @escaping (Bool) -> Void,
+    init(rate: Double, guardSpeech: Bool, reaction: ReactionControl = ReactionControl(), onHit: @escaping (AudioHit) -> Void, onSpeech: @escaping (Bool) -> Void,
          onWarning: @escaping (String) -> Void) {
-        spectrum = BassSpectrum(sampleRate: rate)
+        self.reaction = reaction
+        spectrum = AudioSpectrum(sampleRate: rate, settings: reaction.snapshot(or: ReactionSettings()))
         self.onHit = onHit
         do { speech = try SpeechGuard(sampleRate: rate, enabled: guardSpeech) }
         catch { speech = nil; onWarning("Speech guard unavailable: \(error.localizedDescription)") }
@@ -30,6 +32,7 @@ final class AudioPipeline {
     }
 
     func feedMono(_ pointer: UnsafePointer<Float>, frames: Int, time: Double) {
+        spectrum.configure(reaction.snapshot(or: spectrum.settings))
         speech?.submit(pointer, count: frames)
         spectrum.consume(pointer, frames: frames, endingAt: time) { [self] hit in
             if speech?.allowsLights != false { onHit(hit) }
@@ -73,7 +76,7 @@ final class AudioPipeline {
 
 /// An app-owned, unmuted process tap. Lifecycle changes are serialized off the UI thread.
 final class AudioTap {
-    var onHit: ((BassHit) -> Void)?
+    var onHit: ((AudioHit) -> Void)?
     var onSpeech: ((Bool) -> Void)?
     var onStatus: ((String) -> Void)?
     var onFailure: ((String) -> Void)?
@@ -83,6 +86,7 @@ final class AudioTap {
     private var wanted = false
     private var excluded: Set<String> = []
     private var protectSpeech = true
+    private let reaction = ReactionControl()
     private var pipeline: AudioPipeline?
     private var tap: AudioObjectID = 0
     private var aggregate: AudioObjectID = 0
@@ -103,7 +107,8 @@ final class AudioTap {
         return wanted && revision == value
     }
 
-    func start(excluding: Set<String>, speech: Bool) {
+    func start(excluding: Set<String>, speech: Bool, reaction settings: ReactionSettings = ReactionSettings()) {
+        reaction.replace(settings)
         let request = ticket(active: true)
         work.async { [self] in
             excluded = excluding; protectSpeech = speech
@@ -118,6 +123,8 @@ final class AudioTap {
         _ = ticket(active: false)
         work.async { [self] in close() }
     }
+
+    func setReaction(_ settings: ReactionSettings) { reaction.replace(settings) }
 
     func setSpeechProtection(_ value: Bool) {
         work.async { [self] in protectSpeech = value; pipeline?.speech?.setEnabled(value) }
@@ -140,11 +147,11 @@ final class AudioTap {
         guard device != 0 else { throw CaptureProblem.noOutput }
         guard let uid = string(device, selector: kAudioDevicePropertyDeviceUID) else { throw CaptureProblem.noOutput }
         selectedObjects = allowedProcessIDs()
-        // Filtered capture is an explicit allowed-process mix. A newly created
-        // browser helper can never leak blocked tab audio before reconciliation.
+        // Filtered capture is an explicit allowed-process mix, including newly
+        // allowed apps after the process list is reconciled.
         if !excluded.isEmpty && selectedObjects.isEmpty {
             addListeners()
-            publish(request) { $0.onStatus?("Waiting for allowed apps or connected music tabs") }
+            publish(request) { $0.onStatus?("Waiting for allowed apps") }
             return
         }
         let description = excluded.isEmpty
@@ -176,7 +183,7 @@ final class AudioTap {
         guard current(request) else { close(); return }
         var rate = 44100.0
         try read(aggregate, selector: kAudioDevicePropertyNominalSampleRate, into: &rate)
-        let processor = AudioPipeline(rate: rate, guardSpeech: protectSpeech,
+        let processor = AudioPipeline(rate: rate, guardSpeech: protectSpeech, reaction: reaction,
                                       onHit: { [weak self] hit in
                                           self?.publish(request) { tap in
                                               if tap.pipeline?.speech?.allowsLights != false { tap.onHit?(hit) }
@@ -195,7 +202,7 @@ final class AudioTap {
         callback = proc
         try check(AudioDeviceStart(aggregate, proc), "Start audio")
         addListeners()
-        publish(request) { $0.onStatus?("Listening for bass") }
+        publish(request) { $0.onStatus?("Listening for beats") }
     }
 
     private func close() {

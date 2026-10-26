@@ -30,12 +30,12 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
         settings.isMusicEnabled = { [weak self] in self?.enabled ?? false }
         capture.onHit = { [weak self] hit in
             guard let self, self.enabled else { return }
-            self.captureStatus = "Listening for bass"; self.animator?.react(to: hit); self.render()
+            self.captureStatus = "Listening for beats"; self.animator?.react(to: hit); self.render()
         }
         capture.onSpeech = { [weak self] blocked in
             guard let self, self.enabled else { return }
             if blocked { self.animator?.speechBegan() }
-            self.captureStatus = blocked ? "Talking filtered" : "Listening for bass"
+            self.captureStatus = blocked ? "Talking filtered" : "Listening for beats"
             self.render()
         }
         capture.onStatus = { [weak self] text in self?.captureStatus = text; self?.render() }
@@ -52,6 +52,7 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
         if defaults.bool(forKey: "onboardingDone") {
             if defaults.bool(forKey: "enabledLastSession") { setEnabled(true) }
         } else { showWelcome() }
+        if CommandLine.arguments.contains("--settings") { settings.show() }
     }
 
     private func makeMenu() {
@@ -102,8 +103,10 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
         let before = rules
         updateSnapshot()
         capture.setSpeechProtection(rules.speech)
+        capture.setReaction(rules.reaction)
+        animator?.configure(rules.reaction)
         if enabled && before.captureExclusions != rules.captureExclusions {
-            capture.start(excluding: rules.captureExclusions, speech: rules.speech)
+            capture.start(excluding: rules.captureExclusions, speech: rules.speech, reaction: rules.reaction)
         }
         render()
     }
@@ -131,7 +134,8 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
             window?.close()
             enabled = true; updateSnapshot(); captureStatus = "Starting audio…"
             let config = rules
-            capture.start(excluding: config.captureExclusions, speech: config.speech)
+            animator.configure(config.reaction)
+            capture.start(excluding: config.captureExclusions, speech: config.speech, reaction: config.reaction)
         } else {
             enabled = false; capture.stop(); animator?.stop(); captureStatus = "Paused"
         }

@@ -2,7 +2,7 @@
 
 # MashKeys
 
-Music for your MacBook keyboard. Smooth, full-range bass pulses that follow the music’s pace and volume—with live drop accents, local speech filtering, and a global **⌘⌥K** toggle.
+Music for your MacBook keyboard. Smooth, full-range music pulses that follow the music’s pace and volume—with live drop accents, local speech filtering, and a global **⌘⌥K** toggle.
 
 **[Download MashKeys](https://github.com/Nile54/mashkeys/releases/latest)** · [Privacy](docs/privacy.md)
 
@@ -23,6 +23,8 @@ If audio access was denied, enable MashKeys under **Privacy & Security → Scree
 
 ## How the lights behave
 
+- Choose **Bass / kicks**, **Mids / vocals**, **Treble / hi-hats**, or **Full mix** as the beat source. These follow intensity changes in the selected frequencies; they do not separate instruments.
+- Adjust **Sensitivity** from fewer to more pulses. Higher values detect softer crests and recover sooner, so more hits become visible. Lower values favor strong accents with longer recovery. **Bass at 50%** preserves the original tuning.
 - All keys dip to **0%** and ease back to **100%**. This is a single white backlight, not per-key RGB.
 - Faster rhythms recover faster; stronger hits linger longer. The upward fade can last up to about **2.2 seconds**.
 - A pronounced bass-energy lift or bass returning after a musical break can interrupt an ordinary pulse.
@@ -35,7 +37,7 @@ Stopping or quitting restores your previous brightness, automatic-brightness set
 
 ## Music lights and app exclusions
 
-Open **MashKeys → Settings**. **Music lights — all apps and websites** is the main on/off switch. It stays in sync with the menu and **⌘⌥K** shortcut. When on, YouTube and other websites are eligible automatically.
+Open **MashKeys → Settings**. **Music lights — all apps and websites** is the main on/off switch. It stays in sync with the menu and **⌘⌥K** shortcut. When on, YouTube and other websites are eligible automatically. Beat source and sensitivity apply live, are saved for the next launch, and do not restart audio capture.
 
 Check an app under **Ignore whole apps (checked = ignored)** to exclude its audio from lighting. The app stays audible, and helper processes are covered. Changing app rules or starting a newly allowed app may briefly rebuild the filtered capture.
 
@@ -66,7 +68,7 @@ open .build/MashKeys.app
 
 `build.sh` builds both CPU architectures, generates the original icon and signs the standalone app ad hoc. To use your own signing certificate, set `CODESIGN_IDENTITY`. No signing credentials are included in this repository. `./scripts/package.sh` creates the DMG, ZIP and checksums in `dist/`.
 
-Tests generate their own signals; no user song or captured audio is distributed. They cover first-play bass response, smooth full-depth recovery, tempo/volume adaptation, live drop accents, gain changes, irregular audio buffers, speech decision policy, whole-app rules and legacy website-setting regression coverage. CI builds the universal app. Automated tests do **not** prove optical LED timing or compatibility with every Mac.
+Tests generate their own signals; no user song or captured audio is distributed. They cover first-play bass response, smooth full-depth recovery, tempo/volume adaptation, live drop accents, gain changes, irregular audio buffers, speech decision policy, frequency-band selection, sensitivity, live source changes, saved settings, whole-app rules and legacy website-setting regression coverage. CI builds the universal app. Automated tests do **not** prove optical LED timing or compatibility with every Mac.
 
 For an additional local classifier check, run `./scripts/test-audio.sh spoken-44100.wav music-44100.wav` with your own 44.1 kHz files. This analyzes them without playing, recording, or uploading them.
 
@@ -74,8 +76,8 @@ For an additional local classifier check, run `./scripts/test-audio.sh spoken-44
 
 | Component | Purpose |
 | --- | --- |
-| `Core.swift` | Live bass, drop contrast, adaptive rise and speech policy |
-| `BassSpectrum.swift` | Reusable 2048-point FFT, advanced every 256 samples |
+| `Core.swift` | Sources, sensitivity, crest detection, contrast, adaptive rise and speech policy |
+| `AudioSpectrum.swift` | Selected frequency-band envelope from a 2048-point FFT, every 256 samples |
 | `AudioTap.swift` | System capture, allowed-process mixes and output-device changes |
 | `SpeechGuard.swift` | Bounded, on-device SoundAnalysis worker |
 | `KeyboardBacklight.swift` / `LightAnimator.swift` | Hardware snapshots, immediate writes and smooth recovery |

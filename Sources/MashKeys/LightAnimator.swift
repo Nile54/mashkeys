@@ -4,6 +4,7 @@ import Foundation
 final class LightAnimator {
     private let keyboard: KeyboardBacklight
     private var cadence = RiseTiming()
+    private var reaction = ReactionSettings()
     private var frameTimer: DispatchSourceTimer?
     private var generation: UInt64 = 0
     private var owner: String?
@@ -12,8 +13,13 @@ final class LightAnimator {
 
     func begin() throws { cadence = RiseTiming(); try keyboard.takeControl() }
 
-    func react(to hit: BassHit, source: String = "system") {
-        let duration = cadence.duration(for: hit)
+    func configure(_ settings: ReactionSettings) {
+        if settings.source != reaction.source { cadence = RiseTiming() }
+        reaction = settings
+    }
+
+    func react(to hit: AudioHit, source: String = "system") {
+        let duration = cadence.duration(for: hit, reaction: reaction)
         guard frameTimer == nil || hit.isDrop else { return }
         cancelFrames()
         owner = source

@@ -1,6 +1,64 @@
 import Foundation
 
-struct BassHit {
+enum BeatSource: String, CaseIterable {
+    case bass, mids, treble, fullMix
+
+    var title: String {
+        switch self {
+        case .bass: return "Bass / kicks (20–150 Hz)"
+        case .mids: return "Mids / vocals (250–2,000 Hz)"
+        case .treble: return "Treble / hi-hats (2–16 kHz)"
+        case .fullMix: return "Full mix (20 Hz–20 kHz)"
+        }
+    }
+
+    var range: ClosedRange<Double> {
+        switch self {
+        case .bass: return 20...150
+        case .mids: return 250...2000
+        case .treble: return 2000...16000
+        case .fullMix: return 20...20000
+        }
+    }
+}
+
+struct ReactionSettings: Equatable {
+    let source: BeatSource
+    let sensitivity: Double
+
+    init(source: BeatSource = .bass, sensitivity: Double = 0.5) {
+        self.source = source
+        self.sensitivity = sensitivity.isFinite ? max(0, min(1, sensitivity)) : 0.5
+    }
+
+    // Midpoint exactly preserves the previous bass tuning.
+    var prominence: Float {
+        Float(sensitivity <= 0.5 ? 2.2 - 1.56 * sensitivity : 1.42 - 0.6 * (sensitivity - 0.5))
+    }
+    var minimumGap: Double { sensitivity <= 0.5 ? 0.42 - 0.56 * sensitivity : 0.14 - 0.08 * (sensitivity - 0.5) }
+    var minimumShare: Float { Float(0.10 + (0.5 - sensitivity) * 0.10) }
+    var recoveryScale: Double { pow(1.7, (0.5 - sensitivity) * 2) }
+
+    static func load(from defaults: UserDefaults) -> ReactionSettings {
+        ReactionSettings(source: BeatSource(rawValue: defaults.string(forKey: "beatSource") ?? "") ?? .bass,
+                         sensitivity: defaults.object(forKey: "sensitivity") as? Double ?? 0.5)
+    }
+}
+
+/// The audio callback takes a tiny snapshot without waiting on the settings UI.
+final class ReactionControl {
+    private let mutex = NSLock()
+    private var value: ReactionSettings
+    init(_ value: ReactionSettings = ReactionSettings()) { self.value = value }
+    func replace(_ value: ReactionSettings) { mutex.lock(); self.value = value; mutex.unlock() }
+    func snapshot(or fallback: ReactionSettings) -> ReactionSettings {
+        guard mutex.try() else { return fallback }
+        defer { mutex.unlock() }
+        return value
+    }
+}
+
+struct AudioHit {
     let time: Double
     let volume: Float
     let isDrop: Bool
@@ -40,8 +98,9 @@ struct ContrastTracker {
     }
 }
 
-/// Measures only the 20–150 Hz envelope supplied by the spectrum analyzer.
-struct BassDetector {
+/// Detects crests in the selected frequency-band envelope.
+struct BeatDetector {
+    var settings = ReactionSettings()
     private var dbHistory = [Float](repeating: 0, count: 512)
     private var historyIndex = 0
     private var historyCount = 0
@@ -57,8 +116,8 @@ struct BassDetector {
     private var firedAt = -Double.infinity
     private var contrast = ContrastTracker()
 
-    mutating func observe(energy: Float, bassShare: Float, seconds: Double, time: Double) -> BassHit? {
-        guard energy.isFinite, bassShare.isFinite, seconds > 0, time.isFinite else { return nil }
+    mutating func observe(energy: Float, bandShare: Float, seconds: Double, time: Double) -> AudioHit? {
+        guard energy.isFinite, bandShare.isFinite, seconds > 0, time.isFinite else { return nil }
         if energy < 1e-7 {
             silence += seconds
             background = 0; trough = 0; crest = 0; rising = false
@@ -67,7 +126,7 @@ struct BassDetector {
         }
         silence = 0
         historyElapsed += seconds
-        if bassShare >= 0.08 && (historyCount == 0 || historyElapsed >= 2048.0 / 44100.0) {
+        if bandShare >= settings.minimumShare * 0.8 && (historyCount == 0 || historyElapsed >= 2048.0 / 44100.0) {
             historyElapsed = 0
             dbHistory[historyIndex % dbHistory.count] = 20 * log10(energy)
             historyIndex += 1
@@ -80,23 +139,23 @@ struct BassDetector {
         }
         if background == 0 {
             background = energy * 0.5
-            if bassShare >= 0.10 { rising = true; crest = energy; crestShare = bassShare }
+            if bandShare >= settings.minimumShare { rising = true; crest = energy; crestShare = bandShare }
         }
         background += Float(1 - exp(-seconds / 0.7)) * (energy - background)
         if rising {
-            if energy > crest { crest = energy; crestShare = bassShare }
+            if energy > crest { crest = energy; crestShare = bandShare }
         } else {
             trough = trough == 0 ? energy : min(trough, energy)
-            if energy >= trough * 1.03 { rising = true; crest = energy; crestShare = bassShare }
+            if energy >= trough * 1.03 { rising = true; crest = energy; crestShare = bandShare }
         }
         guard rising, energy < crest * 0.985 else { return nil }
         rising = false; trough = energy
         let prominence = crest / max(background, 1e-8)
-        guard historyCount > 0, crestShare >= 0.10, prominence > 1.42, time - firedAt >= 0.14 else { return nil }
+        guard historyCount > 0, crestShare >= settings.minimumShare, prominence > settings.prominence, time - firedAt >= settings.minimumGap else { return nil }
         firedAt = time
         let db = 20 * log10(max(crest, 1e-8))
         let volume: Float = historyCount < 16 ? 0.5 : max(0, min(1, (db - floorDB) / max(8, ceilingDB - floorDB)))
-        return BassHit(time: time, volume: volume,
+        return AudioHit(time: time, volume: volume,
                        isDrop: contrast.accent(level: crest, position: volume, prominence: prominence, at: time))
     }
 }
@@ -106,7 +165,7 @@ struct RiseTiming {
     private var gaps: [Double] = []
     private var pace = 0.75
 
-    mutating func duration(for hit: BassHit) -> Double {
+    mutating func duration(for hit: AudioHit, reaction: ReactionSettings = ReactionSettings()) -> Double {
         if let last {
             let gap = hit.time - last
             if gap <= 0 || gap > 3 { gaps.removeAll(keepingCapacity: true); pace = 0.75 }
@@ -122,7 +181,8 @@ struct RiseTiming {
         }
         last = hit.time
         let volume = hit.volume.isFinite ? Double(max(0, min(1, hit.volume))) : 0.5
-        return max(0.2, min(2.2, 0.12 + max(0, pace * (0.7 + 0.6 * volume) - 0.12) * 1.6))
+        let original = max(0.2, min(2.2, 0.12 + max(0, pace * (0.7 + 0.6 * volume) - 0.12) * 1.6))
+        return max(0.2, min(2.2, original * reaction.recoveryScale))
     }
 }
 
