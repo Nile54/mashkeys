@@ -25,12 +25,13 @@ If audio access was denied, enable MashKeys under **Privacy & Security → Scree
 
 - Choose **Bass / kicks**, **Mids / vocals**, **Treble / hi-hats**, or **Full mix** as the beat source. These follow intensity changes in the selected frequencies; they do not separate instruments.
 - Adjust **Sensitivity** from fewer to more pulses. Higher values detect softer crests and recover sooner, so more hits become visible. Lower values favor strong accents with longer recovery. **Bass at 50%** preserves the original tuning.
+- Enable **Auto-sync** in the keyboard menu, or **Auto-sync new music** in Settings, to run song sync automatically. It syncs when rhythmic audio begins, re-arms after about two seconds of quiet, and rechecks continuous playback about once a minute. This uses audio rather than track titles, so gapless song changes are handled by periodic refresh rather than exact track detection. Manual slider edits or Cancel hold automation until the next quiet gap; toggling Auto-sync off and on also re-arms it. The preference is saved and defaults off.
 - Click **Sync to song** while music plays to sample about **8 seconds** of the selected beat source and suggest a sensitivity for clear, smooth pulses. It applies and saves the result automatically. Cancel or move the slider to take over. Silence, filtered speech and unclear rhythms leave your setting unchanged. It tunes the current section; it does not recognize the song or guarantee one perfect setting for every section.
 - All keys dip to **0%** and ease back to **100%**. This is a single white backlight, not per-key RGB.
 - Faster rhythms recover faster; stronger hits linger longer. The upward fade can last up to about **2.2 seconds**.
 - A pronounced bass-energy lift or bass returning after a musical break can interrupt an ordinary pulse.
 - Ordinary overlapping hits finish their fade, preventing continuous rapid strobing.
-- Audio is measured live in short windows. Normal lighting needs no song recognition, sync, replay, or track download. Sync is an optional one-time adjustment when you press the button.
+- Audio is measured live in short windows. Normal lighting needs no song recognition, sync, replay, or track download. Sync is an optional adjustment, run by the button or the saved Auto-sync preference.
 
 **Ignore talking** is on by default. Only confident recent speech blocks pulses. Singing and rap remain eligible, and unknown music is allowed immediately. A sound classifier needs roughly half a second of audio to decide: a brief initial speech pulse is possible, and mixed speech/music can be misclassified. This is not a perfect voice separator or an understanding of musical structure.
 
@@ -69,7 +70,7 @@ open .build/MashKeys.app
 
 `build.sh` builds both CPU architectures, generates the original icon and signs the standalone app ad hoc. To use your own signing certificate, set `CODESIGN_IDENTITY`. No signing credentials are included in this repository. `./scripts/package.sh` creates the DMG, ZIP and checksums in `dist/`.
 
-Tests generate their own signals; no user song or captured audio is distributed. They cover first-play bass response, smooth full-depth recovery, tempo/volume adaptation, live drop accents, gain changes, irregular audio buffers, speech decision policy, frequency-band selection, sensitivity, live source changes, saved settings, song-sync content adaptation, gain invariance, cancellation, timeout, silence/speech rejection, whole-app rules and legacy website-setting regression coverage. CI builds the universal app. Automated tests do **not** prove optical LED timing or compatibility with every Mac.
+Tests generate their own signals; no user song or captured audio is distributed. They cover first-play bass response, smooth full-depth recovery, tempo/volume adaptation, live drop accents, gain changes, irregular audio buffers, speech decision policy, frequency-band selection, sensitivity, live source changes, saved settings, song-sync content adaptation, gain invariance, cancellation, timeout, automatic starts/rearming, periodic refresh, manual override, disable races, silence/speech rejection, whole-app rules and legacy website-setting regression coverage. CI builds the universal app. Automated tests do **not** prove optical LED timing or compatibility with every Mac.
 
 For an additional local classifier check, run `./scripts/test-audio.sh spoken-44100.wav music-44100.wav` with your own 44.1 kHz files. This analyzes them without playing, recording, or uploading them.
 

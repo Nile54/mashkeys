@@ -8,7 +8,7 @@ MashKeys processes audio locally. It does not save, upload or transcribe audio, 
 - **Keyboard lighting:** a private Apple framework adjusts the entire built-in backlight. Original settings are snapshotted in this app’s preferences and restored on Stop/Quit. A recovery snapshot covers unexpected exits.
 - **Global shortcut:** registers a specific chord with Carbon. No general keyboard-event monitor is installed and other keystrokes are not collected.
 - **Login item:** optional and controlled from the menu.
-- Preferences store light state, speech preference, beat source, sensitivity, app exclusions, login preference and a temporary brightness recovery snapshot. Inactive domain choices from older versions may remain saved.
+- Preferences store light state, speech preference, beat source, sensitivity, auto-sync preference, app exclusions, login preference and a temporary brightness recovery snapshot. Inactive domain choices from older versions may remain saved.
 
 ## Browsers
 
@@ -21,3 +21,5 @@ Speech classification is probabilistic and takes a short window. Unknown and sta
 ## Sync to song
 
 Sync uses the same allowed system-audio mix and selected frequency source as the lights. On request, it temporarily holds about eight seconds of derived energy/share measurements in memory. It does not save or upload raw audio, identify a track, or download a model. Measurements are discarded after tuning or cancellation; only the resulting sensitivity is saved. If multiple allowed audio sources play together, the suggestion reflects their mix. Confirmed speech is excluded when speech protection is enabled. Cancelling, changing settings, stopping capture or failing to hear enough rhythm leaves the current sensitivity unchanged.
+
+Auto-sync is optional and saved in preferences. When enabled it watches the existing local frequency envelope for rhythmic playback after quiet gaps and periodically rechecks continuous music. It uses no track titles, browser metadata or network service. Automatic requests use the same bounded eight-second sampler, speech policy and whole-app exclusions as manual sync. Manual sensitivity changes and cancellation pause automation until a quiet gap or until Auto-sync is toggled off and on.

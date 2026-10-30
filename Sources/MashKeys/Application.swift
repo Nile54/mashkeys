@@ -12,6 +12,7 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
     private var statusLine = NSMenuItem()
     private var toggleItem = NSMenuItem()
     private var speechItem = NSMenuItem()
+    private var autoSyncItem = NSMenuItem()
     private var loginItem = NSMenuItem()
     private var enabled = false
     private var captureStatus = "Paused"
@@ -19,7 +20,7 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
     private lazy var settings = SettingsWindow()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        defaults.register(defaults: ["speechProtection": true, "enabledLastSession": true])
+        defaults.register(defaults: ["speechProtection": true, "enabledLastSession": true, "autoSyncMusic": false])
         LegacyBrowserCleanup.run(defaults: defaults)
         if let keyboard = try? KeyboardBacklight() { animator = LightAnimator(keyboard: keyboard) }
         status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -66,6 +67,8 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         toggleItem = NSMenuItem(title: "Music lights", action: #selector(toggle), keyEquivalent: "k")
         toggleItem.keyEquivalentModifierMask = [.command, .option]; toggleItem.target = self; menu.addItem(toggleItem)
+        autoSyncItem = NSMenuItem(title: "Auto-sync", action: #selector(toggleAutoSync), keyEquivalent: "")
+        autoSyncItem.target = self; menu.addItem(autoSyncItem)
         let item = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         item.target = self; menu.addItem(item)
         speechItem = NSMenuItem(title: "Ignore talking", action: #selector(toggleSpeech), keyEquivalent: "")
@@ -91,9 +94,10 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
 
     private func render() {
         guard status != nil else { return }
-        settings.refreshMusicState()
+        settings.refreshMusicState(); settings.refreshAutomation()
         toggleItem.state = enabled ? .on : .off
         speechItem.state = defaults.bool(forKey: "speechProtection") ? .on : .off
+        autoSyncItem.state = defaults.bool(forKey: "autoSyncMusic") ? .on : .off
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         statusLine.title = enabled ? captureStatus + " · System-wide" : "Paused · ⌘⌥K to enable"
         status.button?.appearsDisabled = !enabled
@@ -110,6 +114,12 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
             else { capture.songSync.reset() }
             refreshSongSync()
         }
+        let audioChanged = before.reaction.source != rules.reaction.source || before.speech != rules.speech || before.captureExclusions != rules.captureExclusions
+        configureAutomatic(rearm: audioChanged)
+        if !fromSync && before.reaction.sensitivity != rules.reaction.sensitivity {
+            capture.songSync.holdAutomaticForCurrentMusic()
+        }
+        refreshSongSync()
         capture.setSpeechProtection(rules.speech)
         capture.setReaction(rules.reaction)
         animator?.configure(rules.reaction)
@@ -121,10 +131,21 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
 
     private func syncSong() {
         if capture.songSync.status.isBusy {
-            capture.songSync.cancel(); refreshSongSync(); return
+            capture.songSync.cancel(holdAutomatic: true); refreshSongSync(); return
         }
-        guard enabled else { return }
-        capture.songSync.begin(source: rules.reaction.source) { [weak self] result in
+        startSongSync(automatic: false)
+    }
+
+    private func configureAutomatic(rearm: Bool = false) {
+        capture.songSync.configureAutomatic(enabled && rules.autoSync, rearm: rearm) { [weak self] in
+            guard let self, self.enabled, self.rules.autoSync else { return }
+            self.startSongSync(automatic: true)
+        }
+    }
+
+    private func startSongSync(automatic: Bool) {
+        guard enabled, !capture.songSync.status.isBusy else { return }
+        capture.songSync.begin(source: rules.reaction.source, automatic: automatic) { [weak self] result in
             guard let self, self.enabled else { return }
             self.defaults.set(result.sensitivity, forKey: "sensitivity")
             self.applyRules(fromSync: true)
@@ -145,6 +166,7 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggle() { setEnabled(!enabled) }
+    @objc private func toggleAutoSync() { defaults.set(!defaults.bool(forKey: "autoSyncMusic"), forKey: "autoSyncMusic"); applyRules() }
     @objc private func toggleSpeech() { defaults.set(!defaults.bool(forKey: "speechProtection"), forKey: "speechProtection"); applyRules() }
     @objc private func openSettings() { settings.show() }
     @objc private func openProject() { NSWorkspace.shared.open(URL(string: "https://github.com/Nile54/mashkeys")!) }
@@ -165,12 +187,12 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
             do { try animator.begin() } catch { showError(error.localizedDescription); return }
             defaults.set(true, forKey: "onboardingDone")
             window?.close()
-            enabled = true; updateSnapshot(); captureStatus = "Starting audio…"
+            enabled = true; updateSnapshot(); configureAutomatic(rearm: true); captureStatus = "Starting audio…"
             let config = rules
             animator.configure(config.reaction)
             capture.start(excluding: config.captureExclusions, speech: config.speech, reaction: config.reaction)
         } else {
-            enabled = false; capture.songSync.cancel(); refreshSongSync()
+            enabled = false; configureAutomatic(); capture.songSync.cancel(); refreshSongSync()
             capture.stop(); animator?.stop(); captureStatus = "Paused"
         }
         defaults.set(value, forKey: "enabledLastSession")

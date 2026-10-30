@@ -4,6 +4,7 @@ import Foundation
 /// never exclude a browser from the system mix.
 struct RuleSnapshot {
     var speech = true
+    var autoSync = false
     var reaction = ReactionSettings()
     var applications: Set<String> = []
     var captureExclusions: Set<String> { applications }
@@ -14,6 +15,7 @@ struct RuleSnapshot {
 
     static func load(from defaults: UserDefaults) -> RuleSnapshot {
         RuleSnapshot(speech: defaults.object(forKey: "speechProtection") as? Bool != false,
+                     autoSync: defaults.bool(forKey: "autoSyncMusic"),
                      reaction: ReactionSettings.load(from: defaults),
                      applications: Set(defaults.stringArray(forKey: "blockedApplications") ?? []))
     }

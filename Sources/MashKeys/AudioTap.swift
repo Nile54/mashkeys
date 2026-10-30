@@ -212,7 +212,7 @@ final class AudioTap {
     }
 
     private func close() {
-        songSync.cancel("Audio capture changed. Click Sync to song again.")
+        songSync.cancel("Audio capture changed. Click Sync to song again.", rearmAutomatic: true)
         for (original, block) in listeners {
             var address = original
             AudioObjectRemovePropertyListenerBlock(system, &address, work, block)

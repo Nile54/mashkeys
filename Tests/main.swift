@@ -205,6 +205,88 @@ _ = cancelledSync.poll(at: 115)
 require(!cancelledSync.status.isBusy && staleApplications == 0, "Missing audio callbacks must time out without applying a setting")
 print("PASS: song sync for clear/soft tracks (\(Int(clearSync.sensitivity * 100))%/\(Int(softSync.sensitivity * 100))%), gain invariance, sources, silence/speech/tone rejection, completion, cancellation and timeout")
 
+// Auto-sync watches the live envelope without browser metadata or a timer that
+// blindly recalibrates silence. A quiet boundary re-arms it; gapless audio gets
+// bounded periodic refreshes instead of pretending every track is identifiable.
+func feedAutomatic(_ policy: inout AutomaticSyncPolicy, loops: Int = 1, from start: Double = 0, allowed: Bool = true) -> [Double] {
+    var requests: [Double] = []
+    for loop in 0..<loops {
+        for sample in softSyncFrames {
+            let f = sample.frame
+            let shifted = SpectrumFrame(energy: f.energy, share: f.share, seconds: f.seconds, time: f.time + start + Double(loop) * 9)
+            if policy.observe(shifted, allowed: allowed, busy: false) { requests.append(shifted.time) }
+        }
+    }
+    return requests
+}
+func quietAutomatic(_ policy: inout AutomaticSyncPolicy, at time: Double) {
+    for i in 0..<500 {
+        _ = policy.observe(SpectrumFrame(energy: 0, share: 0, seconds: 0.005, time: time + Double(i) * 0.005), allowed: true, busy: false)
+    }
+}
+var automatic = AutomaticSyncPolicy()
+automatic.reset(enabled: true)
+let automaticTimes = feedAutomatic(&automatic, loops: 9)
+require(automaticTimes.count == 2 && automaticTimes[1] - automaticTimes[0] >= 60, "Music starts should sync once, with bounded gapless refresh")
+quietAutomatic(&automatic, at: 81)
+require(feedAutomatic(&automatic, from: 84).count == 1, "Music after a quiet gap must automatically sync again")
+automatic.holdForCurrentMusic()
+require(feedAutomatic(&automatic, loops: 9, from: 93).isEmpty, "Manual tuning should hold against periodic auto-sync for this playback")
+quietAutomatic(&automatic, at: 174)
+require(feedAutomatic(&automatic, from: 177).count == 1, "Auto-sync should resume after the next quiet playback boundary")
+var disabledAuto = AutomaticSyncPolicy()
+require(feedAutomatic(&disabledAuto).isEmpty, "Auto-sync off must leave manual tuning alone")
+disabledAuto.reset(enabled: true)
+require(feedAutomatic(&disabledAuto, allowed: false).isEmpty, "Filtered speech must not trigger auto-sync")
+quietAutomatic(&disabledAuto, at: 9)
+require(feedAutomatic(&disabledAuto, from: 12).count == 1, "Music must still trigger after filtered speech or silence")
+
+let autoCoordinator = SongSyncCoordinator()
+var automaticRequests = 0
+var automaticResult: SongSyncRecommendation?
+autoCoordinator.configureAutomatic(true) { [weak autoCoordinator] in
+    automaticRequests += 1
+    autoCoordinator?.begin(source: .bass, automatic: true) { automaticResult = $0 }
+}
+for sample in softSyncFrames.prefix(600) { autoCoordinator.observe(sample.frame, allowed: true) }
+RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+require(automaticRequests == 1 && autoCoordinator.status.isBusy, "Automatic request must start the same sync on the main queue")
+for sample in softSyncFrames {
+    let f = sample.frame
+    autoCoordinator.observe(SpectrumFrame(energy: f.energy, share: f.share, seconds: f.seconds, time: f.time + 4), allowed: true)
+}
+let automaticDeadline = Date().addingTimeInterval(3)
+while automaticResult == nil && Date() < automaticDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+require(automaticResult != nil && automaticRequests == 1, "Automatic sync should complete without a button click or duplicate request")
+let offBeforeDelivery = SongSyncCoordinator()
+var disabledRequests = 0
+offBeforeDelivery.configureAutomatic(true) { disabledRequests += 1 }
+for sample in softSyncFrames { offBeforeDelivery.observe(sample.frame, allowed: true) }
+offBeforeDelivery.configureAutomatic(false) { disabledRequests += 1 }
+RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+require(disabledRequests == 0, "Turning auto-sync off must invalidate a queued automatic request")
+let manualWorker = DispatchQueue(label: "MashKeys.tests.manual-before-auto")
+manualWorker.suspend()
+let manualBeforeAuto = SongSyncCoordinator(worker: manualWorker)
+var manualDone = false, duplicateAutomaticRequests = 0
+manualBeforeAuto.begin(source: .bass) { _ in manualDone = true }
+manualBeforeAuto.configureAutomatic(true) { duplicateAutomaticRequests += 1 }
+for sample in softSyncFrames { manualBeforeAuto.observe(sample.frame, allowed: true) }
+manualWorker.resume(); manualWorker.sync { }
+let manualDeadline = Date().addingTimeInterval(3)
+while !manualDone && Date() < manualDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+require(manualDone, "Manual sync must finish even if auto-sync was enabled during sampling")
+for sample in softSyncFrames {
+    let f = sample.frame
+    manualBeforeAuto.observe(SpectrumFrame(energy: f.energy, share: f.share, seconds: f.seconds, time: f.time + 9), allowed: true)
+}
+RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+require(duplicateAutomaticRequests == 0, "Enabling auto during manual sync must not immediately override its result")
+var idleManualHold = AutomaticSyncPolicy(); idleManualHold.reset(enabled: true)
+idleManualHold.holdForCurrentMusic(); quietAutomatic(&idleManualHold, at: 0)
+require(feedAutomatic(&idleManualHold, from: 3).count == 1, "Quiet must release a manual hold even if no previous session was observed")
+print("PASS: automatic music starts, quiet-gap rearming, gapless refresh, manual hold, speech exclusion, automatic completion and disable race")
+
 // Regression: even a persisted connected-tabs setting from older releases must
 // leave Chrome in the normal system mix, without any browser helper.
 let suite = "io.github.Nile54.MashKeys.tests." + UUID().uuidString
@@ -220,6 +302,8 @@ preferences.set(["com.google.Chrome"], forKey: "blockedApplications")
 preferences.set(false, forKey: "speechProtection")
 rules = RuleSnapshot.load(from: preferences)
 require(rules.captureExclusions == ["com.google.Chrome"] && !rules.speech, "Explicit whole-app exclusions and speech setting must remain effective")
+preferences.set(true, forKey: "autoSyncMusic")
+require(RuleSnapshot.load(from: preferences).autoSync, "Auto-sync preference must survive loading")
 preferences.set("treble", forKey: "beatSource")
 preferences.set(0.8, forKey: "sensitivity")
 require(RuleSnapshot.load(from: preferences).reaction == ReactionSettings(source: .treble, sensitivity: 0.8), "Source and sensitivity must survive preference loading")
