@@ -7,6 +7,7 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
     private var rules = RuleSnapshot()
     private var animator: LightAnimator?
     private var shortcut: GlobalShortcut?
+    private var syncTimer: DispatchSourceTimer?
     private var status: NSStatusItem!
     private var statusLine = NSMenuItem()
     private var toggleItem = NSMenuItem()
@@ -27,6 +28,7 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
         makeMenu()
         settings.onChange = { [weak self] in self?.applyRules() }
         settings.onToggleMusic = { [weak self] in self?.toggle() }
+        settings.onSyncSong = { [weak self] in self?.syncSong() }
         settings.isMusicEnabled = { [weak self] in self?.enabled ?? false }
         capture.onHit = { [weak self] hit in
             guard let self, self.enabled else { return }
@@ -42,6 +44,7 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
         capture.onFailure = { [weak self] message in
             guard let self else { return }
             self.enabled = false; self.animator?.stop()
+            self.capture.songSync.cancel("Audio capture stopped. Sensitivity unchanged."); self.refreshSongSync()
             self.captureStatus = "Audio access needs attention"; self.render()
             self.showError(message)
         }
@@ -99,9 +102,14 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
 
     private func updateSnapshot() { rules = RuleSnapshot.load(from: defaults) }
 
-    private func applyRules() {
+    private func applyRules(fromSync: Bool = false) {
         let before = rules
         updateSnapshot()
+        if !fromSync && (before.reaction != rules.reaction || before.speech != rules.speech || before.captureExclusions != rules.captureExclusions) {
+            if capture.songSync.status.isBusy { capture.songSync.cancel("Settings changed. Click Sync to song again.") }
+            else { capture.songSync.reset() }
+            refreshSongSync()
+        }
         capture.setSpeechProtection(rules.speech)
         capture.setReaction(rules.reaction)
         animator?.configure(rules.reaction)
@@ -109,6 +117,31 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
             capture.start(excluding: rules.captureExclusions, speech: rules.speech, reaction: rules.reaction)
         }
         render()
+    }
+
+    private func syncSong() {
+        if capture.songSync.status.isBusy {
+            capture.songSync.cancel(); refreshSongSync(); return
+        }
+        guard enabled else { return }
+        capture.songSync.begin(source: rules.reaction.source) { [weak self] result in
+            guard let self, self.enabled else { return }
+            self.defaults.set(result.sensitivity, forKey: "sensitivity")
+            self.applyRules(fromSync: true)
+            self.settings.refreshTuning(); self.refreshSongSync()
+        }
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        syncTimer?.cancel(); syncTimer = timer
+        timer.schedule(deadline: .now(), repeating: .milliseconds(250))
+        timer.setEventHandler { [weak self] in self?.refreshSongSync() }
+        timer.resume()
+        refreshSongSync()
+    }
+
+    private func refreshSongSync() {
+        let state = capture.songSync.poll()
+        settings.updateSongSync(state)
+        if !state.isBusy { syncTimer?.cancel(); syncTimer = nil }
     }
 
     @objc private func toggle() { setEnabled(!enabled) }
@@ -137,13 +170,15 @@ final class MashKeysApplication: NSObject, NSApplicationDelegate {
             animator.configure(config.reaction)
             capture.start(excluding: config.captureExclusions, speech: config.speech, reaction: config.reaction)
         } else {
-            enabled = false; capture.stop(); animator?.stop(); captureStatus = "Paused"
+            enabled = false; capture.songSync.cancel(); refreshSongSync()
+            capture.stop(); animator?.stop(); captureStatus = "Paused"
         }
         defaults.set(value, forKey: "enabledLastSession")
         render()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        syncTimer?.cancel(); syncTimer = nil
         enabled = false; capture.finish(); animator?.stop(); shortcut = nil
     }
 

@@ -37,7 +37,7 @@ final class AudioSpectrum {
         detector.settings = next
     }
 
-    func consume(_ input: UnsafePointer<Float>, frames: Int, endingAt time: Double, onHit: (AudioHit) -> Void) {
+    func consume(_ input: UnsafePointer<Float>, frames: Int, endingAt time: Double, onFrame: ((SpectrumFrame) -> Void)? = nil, onHit: (AudioHit) -> Void) {
         var consumed = 0
         while consumed < frames {
             let n = min(frames - consumed, count - filled)
@@ -48,6 +48,7 @@ final class AudioSpectrum {
             if filled == count {
                 let (energy, share) = spectrum()
                 let end = time - Double(frames - consumed) / sampleRate
+                onFrame?(SpectrumFrame(energy: energy, share: share, seconds: Double(hop) / sampleRate, time: end))
                 if let hit = detector.observe(energy: energy, bandShare: share,
                                                seconds: Double(hop) / sampleRate, time: end) { onHit(hit) }
                 samples.withUnsafeMutableBufferPointer { pointer in

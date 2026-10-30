@@ -3,6 +3,7 @@ import AppKit
 final class SettingsWindow: NSWindowController {
     var onChange: (() -> Void)?
     var onToggleMusic: (() -> Void)?
+    var onSyncSong: (() -> Void)?
     var isMusicEnabled: (() -> Bool)?
     private let defaults = UserDefaults.standard
     private var apps = NSStackView()
@@ -11,9 +12,12 @@ final class SettingsWindow: NSWindowController {
     private var sourcePopup = NSPopUpButton()
     private var sensitivitySlider = NSSlider()
     private var sensitivityValue = NSTextField(labelWithString: "")
+    private var syncButton = NSButton()
+    private var syncProgress = NSProgressIndicator()
+    private var syncDescription = NSTextField(wrappingLabelWithString: "")
 
     init() {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 590),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 480, height: 660),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "MashKeys Settings"
         window.center()
@@ -30,7 +34,29 @@ final class SettingsWindow: NSWindowController {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func refreshMusicState() { musicButton.state = isMusicEnabled?() == true ? .on : .off }
+    func refreshMusicState() {
+        let enabled = isMusicEnabled?() == true
+        musicButton.state = enabled ? .on : .off
+        syncButton.isEnabled = enabled
+    }
+
+    func updateSongSync(_ state: SongSyncStatus) {
+        syncButton.title = state.isBusy ? "Cancel sync" : "Sync to song"
+        syncProgress.isHidden = !state.isBusy
+        switch state {
+        case .ready:
+            syncDescription.stringValue = "Play music, then sync. Listens for 8 seconds in the selected beat source."
+        case .listening(let progress):
+            syncProgress.doubleValue = progress
+            syncDescription.stringValue = "Listening… \(Int(min(8, progress * 8))) / 8 seconds. Keep your music playing."
+        case .analysing:
+            syncProgress.doubleValue = 1
+            syncDescription.stringValue = "Choosing sensitivity for clear, smooth pulses…"
+        case .finished(let percentage):
+            syncDescription.stringValue = "Synced to \(percentage)% from this section. You can still fine-tune the slider."
+        case .message(let message): syncDescription.stringValue = message
+        }
+    }
 
     private func label(_ text: String, size: CGFloat = 13, bold: Bool = false) -> NSTextField {
         let result = NSTextField(wrappingLabelWithString: text)
@@ -41,40 +67,49 @@ final class SettingsWindow: NSWindowController {
     private func build() {
         guard let view = window?.contentView else { return }
         let title = label("Your music. Your rules.", size: 22, bold: true)
-        title.frame = NSRect(x: 22, y: 534, width: 435, height: 32); view.addSubview(title)
+        title.frame = NSRect(x: 22, y: 604, width: 435, height: 32); view.addSubview(title)
         let tuning = label("0–100% light · smooth, music-paced recovery")
         tuning.textColor = .secondaryLabelColor
-        tuning.frame = NSRect(x: 22, y: 504, width: 435, height: 26); view.addSubview(tuning)
+        tuning.frame = NSRect(x: 22, y: 574, width: 435, height: 26); view.addSubview(tuning)
         musicButton = NSButton(checkboxWithTitle: "Music lights — all apps and websites", target: self, action: #selector(musicChanged))
-        musicButton.frame = NSRect(x: 22, y: 468, width: 435, height: 24); view.addSubview(musicButton)
+        musicButton.frame = NSRect(x: 22, y: 538, width: 435, height: 24); view.addSubview(musicButton)
         speechButton = NSButton(checkboxWithTitle: "Ignore talking; keep singing and rap", target: self, action: #selector(speechChanged))
-        speechButton.frame = NSRect(x: 22, y: 434, width: 435, height: 24); view.addSubview(speechButton)
+        speechButton.frame = NSRect(x: 22, y: 504, width: 435, height: 24); view.addSubview(speechButton)
         let privacy = label("Speech detection stays on this Mac. Music starts immediately; confirmed talking is filtered after a brief recognition delay.")
         privacy.textColor = .secondaryLabelColor
-        privacy.frame = NSRect(x: 22, y: 384, width: 435, height: 42); view.addSubview(privacy)
+        privacy.frame = NSRect(x: 22, y: 454, width: 435, height: 42); view.addSubview(privacy)
         let sourceLabel = label("Beat source", bold: true)
-        sourceLabel.frame = NSRect(x: 22, y: 347, width: 90, height: 24); view.addSubview(sourceLabel)
-        sourcePopup = NSPopUpButton(frame: NSRect(x: 117, y: 345, width: 340, height: 28), pullsDown: false)
+        sourceLabel.frame = NSRect(x: 22, y: 417, width: 90, height: 24); view.addSubview(sourceLabel)
+        sourcePopup = NSPopUpButton(frame: NSRect(x: 117, y: 415, width: 340, height: 28), pullsDown: false)
         sourcePopup.addItems(withTitles: BeatSource.allCases.map(\.title))
         sourcePopup.target = self; sourcePopup.action = #selector(sourceChanged)
         sourcePopup.setAccessibilityLabel("Beat source")
         view.addSubview(sourcePopup)
         let sensitivityLabel = label("Sensitivity", bold: true)
-        sensitivityLabel.frame = NSRect(x: 22, y: 309, width: 170, height: 24); view.addSubview(sensitivityLabel)
+        sensitivityLabel.frame = NSRect(x: 22, y: 379, width: 170, height: 24); view.addSubview(sensitivityLabel)
         sensitivityValue.alignment = .right
-        sensitivityValue.frame = NSRect(x: 325, y: 309, width: 132, height: 24); view.addSubview(sensitivityValue)
+        sensitivityValue.frame = NSRect(x: 325, y: 379, width: 132, height: 24); view.addSubview(sensitivityValue)
         sensitivitySlider = NSSlider(value: 50, minValue: 0, maxValue: 100, target: self, action: #selector(sensitivityChanged))
         sensitivitySlider.isContinuous = true
-        sensitivitySlider.frame = NSRect(x: 22, y: 278, width: 435, height: 24)
+        sensitivitySlider.frame = NSRect(x: 22, y: 348, width: 435, height: 24)
         sensitivitySlider.setAccessibilityLabel("Sensitivity")
         view.addSubview(sensitivitySlider)
         let fewer = label("Fewer pulses", size: 11)
-        fewer.frame = NSRect(x: 22, y: 256, width: 180, height: 20); view.addSubview(fewer)
+        fewer.frame = NSRect(x: 22, y: 326, width: 180, height: 20); view.addSubview(fewer)
         let more = label("More pulses", size: 11); more.alignment = .right
-        more.frame = NSRect(x: 277, y: 256, width: 180, height: 20); view.addSubview(more)
+        more.frame = NSRect(x: 277, y: 326, width: 180, height: 20); view.addSubview(more)
         let sensitivityHelp = label("Higher sensitivity picks up softer hits and recovers sooner. 50% keeps the original tuning.", size: 12)
         sensitivityHelp.textColor = .secondaryLabelColor
-        sensitivityHelp.frame = NSRect(x: 22, y: 219, width: 435, height: 34); view.addSubview(sensitivityHelp)
+        sensitivityHelp.frame = NSRect(x: 22, y: 289, width: 435, height: 34); view.addSubview(sensitivityHelp)
+        syncButton = NSButton(title: "Sync to song", target: self, action: #selector(syncSong))
+        syncButton.bezelStyle = .rounded
+        syncButton.frame = NSRect(x: 22, y: 251, width: 150, height: 30); view.addSubview(syncButton)
+        syncProgress.isIndeterminate = false; syncProgress.minValue = 0; syncProgress.maxValue = 1
+        syncProgress.style = .bar; syncProgress.isHidden = true
+        syncProgress.frame = NSRect(x: 184, y: 259, width: 273, height: 12); view.addSubview(syncProgress)
+        syncDescription.font = .systemFont(ofSize: 11); syncDescription.textColor = .secondaryLabelColor
+        syncDescription.frame = NSRect(x: 22, y: 215, width: 435, height: 32); view.addSubview(syncDescription)
+        updateSongSync(.ready)
         let sites = label("YouTube and other websites work automatically. Website-specific exclusions are unavailable; you can ignore whole apps below.")
         sites.textColor = .secondaryLabelColor
         sites.frame = NSRect(x: 22, y: 177, width: 435, height: 36); view.addSubview(sites)
@@ -109,7 +144,7 @@ final class SettingsWindow: NSWindowController {
         }
     }
 
-    private func refreshTuning() {
+    func refreshTuning() {
         let tuning = ReactionSettings.load(from: defaults)
         sourcePopup.selectItem(at: BeatSource.allCases.firstIndex(of: tuning.source) ?? 0)
         sensitivitySlider.doubleValue = tuning.sensitivity * 100
@@ -132,6 +167,8 @@ final class SettingsWindow: NSWindowController {
         defaults.set(sensitivitySlider.doubleValue / 100, forKey: "sensitivity")
         updateSensitivityLabel(); onChange?()
     }
+
+    @objc private func syncSong() { onSyncSong?() }
 
     @objc private func musicChanged() { onToggleMusic?(); refreshMusicState() }
     @objc private func speechChanged() { defaults.set(speechButton.state == .on, forKey: "speechProtection"); onChange?() }

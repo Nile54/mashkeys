@@ -16,13 +16,15 @@ enum CaptureProblem: LocalizedError {
 final class AudioPipeline {
     let spectrum: AudioSpectrum
     private let reaction: ReactionControl
+    private let songSync: SongSyncCoordinator?
     let speech: SpeechGuard?
     let onHit: (AudioHit) -> Void
     private var mono = [Float](repeating: 0, count: 16384)
 
-    init(rate: Double, guardSpeech: Bool, reaction: ReactionControl = ReactionControl(), onHit: @escaping (AudioHit) -> Void, onSpeech: @escaping (Bool) -> Void,
+    init(rate: Double, guardSpeech: Bool, reaction: ReactionControl = ReactionControl(), songSync: SongSyncCoordinator? = nil, onHit: @escaping (AudioHit) -> Void, onSpeech: @escaping (Bool) -> Void,
          onWarning: @escaping (String) -> Void) {
         self.reaction = reaction
+        self.songSync = songSync
         spectrum = AudioSpectrum(sampleRate: rate, settings: reaction.snapshot(or: ReactionSettings()))
         self.onHit = onHit
         do { speech = try SpeechGuard(sampleRate: rate, enabled: guardSpeech) }
@@ -34,7 +36,10 @@ final class AudioPipeline {
     func feedMono(_ pointer: UnsafePointer<Float>, frames: Int, time: Double) {
         spectrum.configure(reaction.snapshot(or: spectrum.settings))
         speech?.submit(pointer, count: frames)
-        spectrum.consume(pointer, frames: frames, endingAt: time) { [self] hit in
+        let allowed = speech?.allowsLights != false
+        spectrum.consume(pointer, frames: frames, endingAt: time, onFrame: { [self] frame in
+            songSync?.observe(frame, allowed: allowed)
+        }) { [self] hit in
             if speech?.allowsLights != false { onHit(hit) }
         }
     }
@@ -76,6 +81,7 @@ final class AudioPipeline {
 
 /// An app-owned, unmuted process tap. Lifecycle changes are serialized off the UI thread.
 final class AudioTap {
+    let songSync = SongSyncCoordinator()
     var onHit: ((AudioHit) -> Void)?
     var onSpeech: ((Bool) -> Void)?
     var onStatus: ((String) -> Void)?
@@ -183,7 +189,7 @@ final class AudioTap {
         guard current(request) else { close(); return }
         var rate = 44100.0
         try read(aggregate, selector: kAudioDevicePropertyNominalSampleRate, into: &rate)
-        let processor = AudioPipeline(rate: rate, guardSpeech: protectSpeech, reaction: reaction,
+        let processor = AudioPipeline(rate: rate, guardSpeech: protectSpeech, reaction: reaction, songSync: songSync,
                                       onHit: { [weak self] hit in
                                           self?.publish(request) { tap in
                                               if tap.pipeline?.speech?.allowsLights != false { tap.onHit?(hit) }
@@ -206,6 +212,7 @@ final class AudioTap {
     }
 
     private func close() {
+        songSync.cancel("Audio capture changed. Click Sync to song again.")
         for (original, block) in listeners {
             var address = original
             AudioObjectRemovePropertyListenerBlock(system, &address, work, block)

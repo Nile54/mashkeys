@@ -134,6 +134,77 @@ liveSpectrum.configure(ReactionSettings(source: .mids))
 midKick.withUnsafeBufferPointer { liveSpectrum.consume($0.baseAddress!, frames: $0.count, endingAt: 2) { _ in liveHits += 1 } }
 require(liveHits > 0, "Live source changes should start detecting the new band immediately")
 
+// Song sync uses measured band envelopes rather than requiring a song file/name.
+func syncSamples(_ pcm: [Float], source: BeatSource = .bass) -> [SongSyncSample] {
+    let spectrum = AudioSpectrum(sampleRate: 44100, settings: ReactionSettings(source: source))
+    var samples: [SongSyncSample] = []
+    pcm.withUnsafeBufferPointer { pointer in
+        var offset = 0
+        while offset < pointer.count {
+            let count = min(512, pointer.count - offset)
+            spectrum.consume(pointer.baseAddress!.advanced(by: offset), frames: count, endingAt: Double(offset + count) / 44100,
+                             onFrame: { samples.append(SongSyncSample(frame: $0, allowed: true)) }) { _ in }
+            offset += count
+        }
+    }
+    return samples
+}
+let clearSyncFrames = syncSamples(Array(song.prefix(44100 * 9)))
+let softSyncFrames = syncSamples(textured)
+let clearSync = try SongSensitivityTuner.recommend(clearSyncFrames, source: .bass)
+let softSync = try SongSensitivityTuner.recommend(softSyncFrames, source: .bass)
+let quietSyncFrames = softSyncFrames.map { sample in
+    let f = sample.frame
+    return SongSyncSample(frame: SpectrumFrame(energy: f.energy * 0.02, share: f.share, seconds: f.seconds, time: f.time), allowed: true)
+}
+let quietSync = try SongSensitivityTuner.recommend(quietSyncFrames, source: .bass)
+require(quietSync.sensitivity == softSync.sensitivity, "Sync should follow relative rhythm, not playback gain")
+require(clearSync.sensitivity >= 0 && clearSync.sensitivity <= 1 && softSync.visiblePulses >= 3, "Sync must suggest a usable bounded setting")
+require(clearSync.sensitivity != softSync.sensitivity, "Different accent structure should not always return a fixed percentage")
+for (source, frequency) in [(BeatSource.mids, 1000.0), (.treble, 5000.0), (.fullMix, 1000.0)] {
+    let result = try SongSensitivityTuner.recommend(syncSamples(synthesize(frequency: frequency, length: 9, sections: true), source: source), source: source)
+    require(result.visiblePulses >= 3, "Sync must honor every available beat source")
+}
+func cannotSync(_ frames: [SongSyncSample], _ message: String) {
+    do { _ = try SongSensitivityTuner.recommend(frames, source: .bass); fatalError(message) }
+    catch is SongSyncError { }
+    catch { fatalError("Unexpected sync failure: \(error)") }
+}
+cannotSync(syncSamples([Float](repeating: 0, count: 44100 * 9)), "Silence must not change sensitivity")
+cannotSync(softSyncFrames.map { SongSyncSample(frame: $0.frame, allowed: false) }, "Filtered speech must not calibrate lights")
+cannotSync(Array(softSyncFrames.prefix(100)), "Insufficient music must not produce a pretend sync")
+let constantTone = (0..<44100 * 9).map { Float(0.1 * sin(2 * .pi * 80 * Double($0) / 44100)) }
+cannotSync(syncSamples(constantTone), "A steady tone without rhythmic changes must not produce a pretend sync")
+
+let coordinator = SongSyncCoordinator()
+var synced: SongSyncRecommendation?
+coordinator.begin(source: .bass) { result in
+    require(Thread.isMainThread, "Saved sensitivity must be delivered on the UI thread")
+    synced = result
+}
+for sample in softSyncFrames { coordinator.observe(sample.frame, allowed: sample.allowed) }
+let syncDeadline = Date().addingTimeInterval(3)
+while synced == nil && Date() < syncDeadline { RunLoop.main.run(until: Date().addingTimeInterval(0.01)) }
+require(synced?.sensitivity == softSync.sensitivity, "Coordinator must apply the measured recommendation")
+require(!coordinator.status.isBusy, "Successful sync must finish its progress state")
+
+// Cancelled/obsolete analysis must never overwrite the manual slider or a new sync.
+let heldWorker = DispatchQueue(label: "MashKeys.tests.sync-cancel")
+heldWorker.suspend()
+let cancelledSync = SongSyncCoordinator(worker: heldWorker)
+var staleApplications = 0
+cancelledSync.begin(source: .bass) { _ in staleApplications += 1 }
+for sample in softSyncFrames { cancelledSync.observe(sample.frame, allowed: true) }
+require(cancelledSync.status == .analysing, "Full sample should enter background analysis")
+cancelledSync.cancel()
+heldWorker.resume(); heldWorker.sync { }
+RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+require(staleApplications == 0 && !cancelledSync.status.isBusy, "Cancelling analysis must discard its queued result")
+cancelledSync.begin(source: .bass, at: 100) { _ in staleApplications += 1 }
+_ = cancelledSync.poll(at: 115)
+require(!cancelledSync.status.isBusy && staleApplications == 0, "Missing audio callbacks must time out without applying a setting")
+print("PASS: song sync for clear/soft tracks (\(Int(clearSync.sensitivity * 100))%/\(Int(softSync.sensitivity * 100))%), gain invariance, sources, silence/speech/tone rejection, completion, cancellation and timeout")
+
 // Regression: even a persisted connected-tabs setting from older releases must
 // leave Chrome in the normal system mix, without any browser helper.
 let suite = "io.github.Nile54.MashKeys.tests." + UUID().uuidString

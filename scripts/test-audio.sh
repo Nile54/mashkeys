@@ -8,7 +8,7 @@ fi
 mkdir -p "$ROOT/.build/tests"
 swiftc -swift-version 5 -DTESTING -O \
   "$ROOT/Tests/Audio/main.swift" "$ROOT/Sources/MashKeys/Core.swift" \
-  "$ROOT/Sources/MashKeys/AudioSpectrum.swift" "$ROOT/Sources/MashKeys/AudioTap.swift" \
+  "$ROOT/Sources/MashKeys/SongSync.swift" "$ROOT/Sources/MashKeys/AudioSpectrum.swift" "$ROOT/Sources/MashKeys/AudioTap.swift" \
   "$ROOT/Sources/MashKeys/SpeechGuard.swift" \
   -framework CoreAudio -framework Accelerate -framework AVFoundation -framework SoundAnalysis \
   -o "$ROOT/.build/tests/audio"

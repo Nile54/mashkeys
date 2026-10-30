@@ -4,6 +4,6 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$ROOT/.build/tests"
 swiftc -swift-version 5 -O \
   "$ROOT/Tests/main.swift" "$ROOT/Sources/MashKeys/Core.swift" \
-  "$ROOT/Sources/MashKeys/AudioSpectrum.swift" "$ROOT/Sources/MashKeys/Rules.swift" \
+  "$ROOT/Sources/MashKeys/SongSync.swift" "$ROOT/Sources/MashKeys/AudioSpectrum.swift" "$ROOT/Sources/MashKeys/Rules.swift" \
   -framework Accelerate -o "$ROOT/.build/tests/core"
 "$ROOT/.build/tests/core"
